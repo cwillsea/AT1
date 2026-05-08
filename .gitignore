@@ -1,1 +1,16 @@
 .claude/
+
+# secrets
+.env
+.env.*
+*.key
+*.pem
+aplos/private/
+aplos/.private/
+
+# dependencies & build artifacts
+node_modules/
+
+# generated data
+square/deposits/
+*.csv
