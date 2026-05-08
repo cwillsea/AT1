@@ -1,26 +1,28 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
-import dotenv from 'dotenv';
-import { SquareClient, SquareEnvironment } from 'square';
+import { mkdirSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import dotenv from "dotenv";
+import { SquareClient, SquareEnvironment } from "square";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(scriptDir, '.env') });
+dotenv.config({ path: resolve(scriptDir, ".env") });
 
 const {
   SQUARE_ACCESS_TOKEN,
-  SQUARE_ENVIRONMENT = 'production',
+  SQUARE_ENVIRONMENT = "production",
   BEGIN_DATE,
   END_DATE,
   LOCATION_ID,
-  TIMEZONE = 'America/Phoenix',
+  TIMEZONE = "America/Phoenix",
 } = process.env;
 
-if (!SQUARE_ACCESS_TOKEN) throw new Error('SQUARE_ACCESS_TOKEN missing in .env');
-if (!BEGIN_DATE || !END_DATE) throw new Error('BEGIN_DATE and END_DATE required in .env (YYYY-MM-DD)');
+if (!SQUARE_ACCESS_TOKEN)
+  throw new Error("SQUARE_ACCESS_TOKEN missing in .env");
+if (!BEGIN_DATE || !END_DATE)
+  throw new Error("BEGIN_DATE and END_DATE required in .env (YYYY-MM-DD)");
 
 const environment =
-  SQUARE_ENVIRONMENT.toLowerCase() === 'sandbox'
+  SQUARE_ENVIRONMENT.toLowerCase() === "sandbox"
     ? SquareEnvironment.Sandbox
     : SquareEnvironment.Production;
 
@@ -42,21 +44,21 @@ const sumProcessingFees = (fees) =>
   (fees ?? []).reduce((s, f) => s + cents(f.amountMoney), 0);
 
 const escape = (v) => {
-  if (v == null) return '';
+  if (v == null) return "";
   const s = String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 const HEADERS = [
-  'deposit_date',
-  'payout_amount',
-  'Gross Sales',
-  'Net Sales',
-  'Tip',
-  'Total Collected',
-  'Fees',
-  'Net Total',
-  'Description',
+  "deposit_date",
+  "payout_amount",
+  "Gross Sales",
+  "Net Sales",
+  "Tip",
+  "Total Collected",
+  "Fees",
+  "Net Total",
+  "Description",
 ];
 
 async function collect(pageable) {
@@ -85,14 +87,16 @@ async function getOrder(id) {
 }
 
 const describeOrder = (order) => {
-  if (!order?.lineItems?.length) return '';
+  if (!order?.lineItems?.length) return "";
   return order.lineItems
     .map((li) => {
-      const q = parseInt(li.quantity ?? '1', 10);
-      const name = li.variationName ? `${li.name} (${li.variationName})` : li.name;
+      const q = parseInt(li.quantity ?? "1", 10);
+      const name = li.variationName
+        ? `${li.name} (${li.variationName})`
+        : li.name;
       return q > 1 ? `${q} x ${name}` : name;
     })
-    .join(', ');
+    .join(", ");
 };
 
 console.log(
@@ -135,7 +139,7 @@ for (const p of inRange) {
     let totalCents = 0;
     let feeCents = cents(e.feeAmountMoney);
     let netTotalCents = cents(e.netAmountMoney);
-    let description = e.type ?? '';
+    let description = e.type ?? "";
 
     if (paymentId) {
       try {
@@ -182,11 +186,12 @@ for (const p of inRange) {
 
 rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 
-const outDir = resolve(scriptDir, 'deposits');
+const outDir = resolve(scriptDir, "deposits");
 mkdirSync(outDir, { recursive: true });
 const outFile = join(outDir, `${BEGIN_DATE}_to_${END_DATE}.csv`);
 
-const csv = [HEADERS, ...rows].map((r) => r.map(escape).join(',')).join('\n') + '\n';
+const csv =
+  [HEADERS, ...rows].map((r) => r.map(escape).join(",")).join("\n") + "\n";
 writeFileSync(outFile, csv);
 
 console.log(
