@@ -1,4 +1,5 @@
-import { getAccessToken, aplos } from "./auth.js";
+import { getAccessToken } from "./auth.js";
+import { buildLine, postTransaction } from "./transactions.js";
 
 // ─── EDIT THIS BLOCK ──────────────────────────────────────────
 const DRY_RUN = false; // false = actually POST to Aplos
@@ -19,33 +20,16 @@ if (tx.amount <= 0)
   throw new Error("amount must be positive; type controls direction");
 
 // Sign convention: cash + means money in, cash - means money out.
-// Income: cash +X, income account -X.  Expense: cash -X, expense account +X.
 const cashSign = tx.type === "income" ? 1 : -1;
-const cashAmt = +(tx.amount * cashSign).toFixed(2);
-const offsetAmt = +(-cashAmt).toFixed(2);
+const cashAmt = tx.amount * cashSign;
 
-const tags = tx.tagIds.map((id) => ({ id }));
-const body = {
-  date: tx.date,
-  note: tx.note,
-  contact: tx.contact,
-  lines: [
-    {
-      amount: cashAmt,
-      account: { account_number: CASH_ACCOUNT },
-      fund: { id: tx.fundId },
-      tags,
-    },
-    {
-      amount: offsetAmt,
-      account: { account_number: tx.categoryAccount },
-      fund: { id: tx.fundId },
-      tags,
-    },
-  ],
-};
+const lines = [
+  buildLine({ accountNumber: CASH_ACCOUNT,        fundId: tx.fundId, tagIds: tx.tagIds, amount: cashAmt }),
+  buildLine({ accountNumber: tx.categoryAccount,  fundId: tx.fundId, tagIds: tx.tagIds, amount: -cashAmt }),
+];
 
-console.log("Request body:\n" + JSON.stringify(body, null, 2));
+const txBody = { date: tx.date, note: tx.note, contact: tx.contact, lines };
+console.log("Request body:\n" + JSON.stringify(txBody, null, 2));
 
 if (DRY_RUN) {
   console.log("\n[DRY_RUN] Not posted. Set DRY_RUN=false to actually submit.");
@@ -53,9 +37,6 @@ if (DRY_RUN) {
 }
 
 const token = await getAccessToken();
-const { status, body: resp } = await aplos(token, "/transactions", {
-  method: "POST",
-  body,
-});
+const { status, body: resp } = await postTransaction(token, txBody);
 console.log(`\nPOST /transactions → ${status}`);
 console.log(JSON.stringify(resp, null, 2));
