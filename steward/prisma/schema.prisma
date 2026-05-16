@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Generic categorization rule used by both Square (regex match → account/fund/tag)
+// and Subsplash (exact match → purpose for gifts, or account/fund/tag for payments).
+//
+// source values:
+//   "square"             — regex on description → accountNumber + fundId + tagId
+//   "subsplash-gift"     — exact match on Fund   → purposeId (account/fund auto-derived)
+//   "subsplash-payment"  — exact match on Source → accountNumber + fundId + tagId
+model CategorizationRule {
+  id            Int      @id @default(autoincrement())
+  source        String
+  matchType     String   @default("contains") // "contains" | "regex" | "exact"
+  pattern       String
+  priority      Int      @default(0)
+  // For square + subsplash-payment:
+  accountNumber Int?
+  fundId        Int?
+  tagId         Int?
+  // For subsplash-gift:
+  purposeId     Int?
+  label         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Cached Chart of Accounts from Aplos. PK is Aplos's account_number.
+model Account {
+  accountNumber Int      @id
+  name          String
+  category      String?
+  isEnabled     Boolean  @default(true)
+  syncedAt      DateTime @default(now())
+}
+
+// Cached funds from Aplos. PK is Aplos's fund id.
+model Fund {
+  id       Int      @id
+  name     String
+  syncedAt DateTime @default(now())
+}
+
+// Cached giving purposes from Aplos. Each purpose has a pre-linked income
+// account and fund — posting a contribution line by purpose_id auto-credits
+// those, no need to specify them on the post.
+model Purpose {
+  id              Int      @id
+  name            String
+  description     String?
+  isEnabled       Boolean  @default(true)
+  incomeAccount   Int?     // Aplos account_number
+  fundId          Int?     // Aplos fund id
+  syncedAt        DateTime @default(now())
+}
+
+// Cached tags (ministries) from Aplos. PK is Aplos's tag id.
+// Aplos nests tags under tag_groups under tagcategories; we flatten and
+// keep the top-level category name plus optional parent for sub-tags.
+model Tag {
+  id          Int      @id
+  name        String
+  category    String?  // top-level tagcategory name, e.g. "Ministry"
+  parentId    Int?
+  syncedAt    DateTime @default(now())
+}
+
+// Tracks the watermark for incremental syncs. PK is the source name.
+// e.g. source="square", lastFetchedThrough="2026-04-30"
+model SyncState {
+  source             String   @id
+  lastFetchedThrough String?  // YYYY-MM-DD; null if never synced
+  lastSyncAt         DateTime?
+  lastError          String?
+}
+
+// User-mark that a deposit was manually posted to Aplos (when the Aplos API
+// is uncooperative). Keyed by the same externalKey as PostingLog uses.
+model ManualMark {
+  externalKey String   @id
+  source      String   // "square" for v1
+  marked      Boolean  @default(true)
+  markedAt    DateTime @default(now())
+  note        String?
+}
+
+// Soft-delete marker for cards the user wants gone from their to-do view.
+// Same externalKey shape as ManualMark.
+model DeletedDeposit {
+  externalKey String   @id
+  source      String
+  deletedAt   DateTime @default(now())
+  reason      String?
+}
+
+model PostingLog {
+  id           Int      @id @default(autoincrement())
+  source       String
+  externalKey  String   @unique
+  aplosTxnId   String?
+  status       String
+  requestBody  String
+  responseBody String?
+  postedAt     DateTime @default(now())
+}

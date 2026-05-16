@@ -1,0 +1,24 @@
+-- CreateTable
+CREATE TABLE "Account" (
+    "accountNumber" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "category" TEXT,
+    "isEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "Fund" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
+CREATE TABLE "Tag" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "category" TEXT,
+    "parentId" INTEGER,
+    "syncedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
