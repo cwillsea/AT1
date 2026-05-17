@@ -1,26 +1,18 @@
 import { spawn } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import path from "node:path";
 import { prisma } from "./db";
 
 const SQUARE_DIR = path.resolve(process.cwd(), "..", "square");
 const DEPOSITS_DIR = path.join(SQUARE_DIR, "deposits");
 
-// Find lastFetchedThrough either from DB or, if missing, by scanning filenames
-// like "YYYY-MM-DD_to_YYYY-MM-DD.csv" and taking the max end date.
+// The DB SyncState row is the single source of truth for the watermark.
+// When it's missing, callers should fall back to a fixed origin date — do not
+// infer the watermark from CSV filenames (CSVs are derived artifacts and may
+// be stale or hand-edited).
 async function getLastFetchedThrough(): Promise<string | null> {
   const state = await prisma.syncState.findUnique({ where: { source: "square" } });
-  if (state?.lastFetchedThrough) return state.lastFetchedThrough;
-
-  try {
-    const files = readdirSync(DEPOSITS_DIR).filter((f) => /^\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}\.csv$/.test(f));
-    if (files.length === 0) return null;
-    const ends = files.map((f) => f.match(/_to_(\d{4}-\d{2}-\d{2})\.csv$/)![1]);
-    ends.sort();
-    return ends[ends.length - 1];
-  } catch {
-    return null;
-  }
+  return state?.lastFetchedThrough ?? null;
 }
 
 function todayIsoUtc(): string {
@@ -47,7 +39,10 @@ export type SquareSyncResult = {
 export async function syncSquare(): Promise<SquareSyncResult> {
   const last = await getLastFetchedThrough();
   const endDate = todayIsoUtc();
-  const beginDate = last ? addDaysIso(last, 1) : addDaysIso(endDate, -30);
+  // No watermark yet: start from a fixed origin date so first-sync windows are
+  // predictable instead of relative-to-today. Bump this when going to prod.
+  const DEFAULT_ORIGIN = "2026-05-01";
+  const beginDate = last ? addDaysIso(last, 1) : DEFAULT_ORIGIN;
 
   if (beginDate > endDate) {
     return { beginDate, endDate, csvWritten: null, rowCount: 0, skipped: true, skipReason: "already up to date" };

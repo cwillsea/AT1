@@ -50,9 +50,6 @@ export function RulesTabs({
       active ? "border-forest text-ink" : "border-transparent text-ink3 hover:text-ink2"
     }`;
 
-  // Square missing-rule warnings
-  const squareMissingDefault = !squareRules.some((r) => r.pattern === "*");
-
   // Subsplash missing-rule warnings
   const giftFundsCovered = new Set(subsplashGiftRules.map((r) => r.pattern));
   const giftFundsMissing = observedGiftFunds.filter((f) => !giftFundsCovered.has(f));
@@ -65,7 +62,6 @@ export function RulesTabs({
       <div className="px-8 border-b border-line flex gap-2">
         <button onClick={() => setTab("square")} className={tabClass(tab === "square")}>
           Square
-          {squareMissingDefault && <span className="ml-1.5 text-honey">●</span>}
         </button>
         <button onClick={() => setTab("subsplash")} className={tabClass(tab === "subsplash")}>
           Subsplash

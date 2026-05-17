@@ -51,6 +51,7 @@ const escape = (v) => {
 
 const HEADERS = [
   "deposit_date",
+  "deposit_id",
   "payout_amount",
   "Gross Sales",
   "Net Sales",
@@ -172,6 +173,7 @@ for (const p of inRange) {
 
     rows.push([
       depositDate,
+      p.id,
       payoutAmount,
       fmt(grossCents),
       fmt(netSalesCents),

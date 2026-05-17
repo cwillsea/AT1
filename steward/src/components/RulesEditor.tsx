@@ -124,7 +124,8 @@ export function RulesEditor({
 
   const submitAdd = async () => {
     if (!adding) return;
-    if (!adding.pattern) { alert("Pattern is required (use \"*\" for catch-all)"); return; }
+    if (!adding.pattern) { alert("Pattern is required"); return; }
+    if (adding.pattern === "*") { alert("Catch-all rules are no longer supported — unmatched items are flagged on the imports page so you can add a specific rule"); return; }
     setBusy(true);
     try {
       const res = await fetch(`/api/rules`, {
@@ -148,7 +149,7 @@ export function RulesEditor({
     <>
       {accounts.map((a) => (
         <option key={a.number} value={a.number}>
-          {a.accountNumber ?? a.number} — {a.name}{a.category ? ` (${a.category})` : ""}
+          {a.number} — {a.name}{a.category ? ` (${a.category})` : ""}
         </option>
       ))}
     </>
@@ -203,7 +204,7 @@ export function RulesEditor({
               <input type="number" value={adding.priority ?? 0} onChange={(e) => setAdding({ ...adding, priority: Number(e.target.value) })} className={`${inputClass} w-full text-right`} />
             </div>
             <div className={cellClass}>
-              <input type="text" value={adding.pattern ?? ""} onChange={(e) => setAdding({ ...adding, pattern: e.target.value })} placeholder='e.g. "youth" or "*"' className={`${inputClass} w-full`} />
+              <input type="text" value={adding.pattern ?? ""} onChange={(e) => setAdding({ ...adding, pattern: e.target.value })} placeholder='e.g. "youth"' className={`${inputClass} w-full`} />
             </div>
             <div className={cellClass}>
               <input type="text" value={adding.label ?? ""} onChange={(e) => setAdding({ ...adding, label: e.target.value })} placeholder="Optional friendly label" className={`${inputClass} w-full`} />
@@ -240,7 +241,7 @@ export function RulesEditor({
                 {editing ? (
                   <input type="text" value={r.pattern ?? ""} onChange={(e) => setDraft({ ...draft, pattern: e.target.value })} className={`${inputClass} w-full`} />
                 ) : (
-                  <span className="font-mono text-[12px] text-ink">{rule.pattern === "*" ? <em className="text-ink3">* (catch-all)</em> : rule.pattern}</span>
+                  <span className="font-mono text-[12px] text-ink">{rule.pattern === "*" || rule.pattern === "" ? <em className="text-clay">(legacy catch-all — no longer used; delete me)</em> : rule.pattern}</span>
                 )}
               </div>
               <div className={cellClass}>
@@ -300,10 +301,10 @@ export function RulesEditor({
 
       <div className="font-ui text-[11.5px] text-ink3 max-w-2xl">
         <strong>How matching works:</strong> Each Square line item&apos;s description is lowercased
-        and checked against rules from highest priority down. The first matching rule wins. Pattern{" "}
-        <span className="font-mono">*</span> matches everything (catch-all). After editing here,{" "}
-        <strong>reload the Square imports page</strong> and the cards re-classify automatically — no
-        re-sync needed.
+        and checked against rules from highest priority down. The first matching rule wins. Items
+        that don&apos;t match <em>any</em> rule are flagged on the Square imports page so you can add
+        a rule inline. After editing here, <strong>reload the Square imports page</strong> and the
+        cards re-classify automatically — no re-sync needed.
       </div>
     </div>
   );

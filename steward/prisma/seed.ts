@@ -17,7 +17,6 @@ const rules = [
   { source: "square", pattern: "youth", priority: 90, accountNumber: COFFEE, fundId: FUND_GENERAL, tagId: TAG_YOUTH, label: "Youth coffee (youth)" },
   { source: "square", pattern: "yth", priority: 90, accountNumber: COFFEE, fundId: FUND_GENERAL, tagId: TAG_YOUTH, label: "Youth coffee (yth)" },
   { source: "square", pattern: "holy pop", priority: 90, accountNumber: COFFEE, fundId: FUND_GENERAL, tagId: TAG_YOUTH, label: "Youth coffee (holy pop)" },
-  { source: "square", pattern: "", priority: 0, accountNumber: COFFEE, fundId: FUND_GENERAL, tagId: TAG_HOLY_GROUNDS, label: "Default: Coffee bar" },
 ];
 
 async function main() {

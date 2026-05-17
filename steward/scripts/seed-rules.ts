@@ -18,7 +18,7 @@ const TAG_YOUTH = 338178;
 //   "Yth Shirt"   → matches "yth shirt" (priority 100) → MERCH + YOUTH
 //   "Youth Snack" → matches "youth"     (priority 50)  → COFFEE + YOUTH
 //   "Raffle"      → matches "raffle"    (priority 90)  → MERCH + HOLY_GROUNDS
-//   "GodLoveSoul" → only matches "*"    (priority 0)   → COFFEE + HOLY_GROUNDS
+//   "GodLoveSoul" → nothing matches → surfaced in the UI as "needs rule"
 const RULES = [
   { pattern: "yth shirt",  priority: 100, accountNumber: MERCH,  tagId: TAG_YOUTH,         label: "Youth Shirt → Merch + Youth" },
   { pattern: "youth shirt",priority: 100, accountNumber: MERCH,  tagId: TAG_YOUTH,         label: "Youth Shirt → Merch + Youth" },
@@ -27,7 +27,6 @@ const RULES = [
   { pattern: "youth",      priority:  50, accountNumber: COFFEE, tagId: TAG_YOUTH,         label: "Youth → Coffee + Youth" },
   { pattern: "yth",        priority:  50, accountNumber: COFFEE, tagId: TAG_YOUTH,         label: "Yth → Coffee + Youth" },
   { pattern: "holy pop",   priority:  50, accountNumber: COFFEE, tagId: TAG_YOUTH,         label: "Holy Pop → Coffee + Youth" },
-  { pattern: "*",          priority:   0, accountNumber: COFFEE, tagId: TAG_HOLY_GROUNDS,  label: "Default → Coffee + Holy Grounds" },
 ];
 
 async function main() {

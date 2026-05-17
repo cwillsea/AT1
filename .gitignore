@@ -13,6 +13,7 @@ node_modules/
 
 # generated data
 square/deposits/
+square/aplos-imports/
 *.csv
 
 # sqlite databases

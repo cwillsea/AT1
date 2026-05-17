@@ -2,19 +2,39 @@ import path from "node:path";
 import { type NameTable } from "@/components/PayoutCard";
 import { DepositList } from "@/components/DepositList";
 import { SourceChip } from "@/components/SourceChip";
+import { GenerateImportButton } from "@/components/GenerateImportButton";
 import { fmtUSD } from "@/lib/fmt";
-import { loadAllDeposits } from "@/lib/square-csv";
+import { loadAllDeposits } from "@/lib/square-csv-server";
 import { loadAplosNames } from "@/lib/aplos-lookup";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic"; // always fresh; CSVs change on sync
 
 export default async function ImportsPage() {
-  const rules = await prisma.categorizationRule.findMany({ where: { source: "square" } });
+  const [rules, accountRows, fundRows, tagRows] = await Promise.all([
+    prisma.categorizationRule.findMany({ where: { source: "square" } }),
+    prisma.account.findMany({ orderBy: { accountNumber: "asc" } }),
+    prisma.fund.findMany({ orderBy: { name: "asc" } }),
+    prisma.tag.findMany({ orderBy: { name: "asc" } }),
+  ]);
+
+  // Strip the legacy id/source/etc — DepositList only needs the classifier shape.
+  const ruleSeeds = rules.map((r) => ({
+    id: r.id,
+    pattern: r.pattern,
+    matchType: r.matchType,
+    priority: r.priority,
+    accountNumber: r.accountNumber ?? 0,
+    fundId: r.fundId ?? 0,
+    tagId: r.tagId ?? 0,
+  }));
+  const accountOptions = accountRows.map((a) => ({ number: a.accountNumber, name: a.name, category: a.category }));
+  const fundOptions = fundRows.map((f) => ({ id: f.id, name: f.name }));
+  const tagOptions = tagRows.map((t) => ({ id: t.id, name: t.name, category: t.category }));
 
   let deposits, csvPaths;
   try {
-    ({ deposits, csvPaths } = loadAllDeposits(rules));
+    ({ deposits, csvPaths } = loadAllDeposits(ruleSeeds));
   } catch (e) {
     return (
       <div className="px-8 py-6">
@@ -65,6 +85,8 @@ export default async function ImportsPage() {
           </div>
         </div>
         <div className="flex gap-4 items-center">
+          <GenerateImportButton />
+          <div className="w-px h-8 bg-line" />
           <div className="text-right">
             <div className="font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">pending</div>
             <div className="font-display text-[18px] text-ink mt-0.5 font-medium">
@@ -107,6 +129,10 @@ export default async function ImportsPage() {
           names={names}
           initialMarkedKeys={[...manuallyPosted]}
           initialDeletedKeys={[...deletedSet]}
+          initialRules={ruleSeeds}
+          accounts={accountOptions}
+          funds={fundOptions}
+          tags={tagOptions}
         />
       </div>
     </>
