@@ -88,8 +88,8 @@ function groupIntoDeposits(rows: CsvRow[], rules: Rule[]): Deposit[] {
 }
 
 // Reads every CSV in ../square/deposits and groups across all of them.
-// Duplicates from overlapping CSVs naturally collapse because Deposit.id is
-// `${date}:${amount}` — same deposit yields the same id.
+// Deposits are keyed by payout ID (deposit_id column) so overlapping CSVs
+// naturally de-duplicate.
 export function loadAllDeposits(rules: Rule[]): { csvPaths: string[]; deposits: Deposit[] } {
   const dir = path.resolve(process.cwd(), "..", "square", "deposits");
   const csvs = readdirSync(dir).filter((f) => f.endsWith(".csv")).sort();

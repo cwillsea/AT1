@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { SourceChip } from "./SourceChip";
 import { FlowDiagram } from "./FlowDiagram";
+import { SearchableSelect } from "./SearchableSelect";
 import { fmtUSD, fmtShortDate } from "@/lib/fmt";
 import type { ClassifiedRow, RollupLine } from "@/lib/square-csv";
 
@@ -224,7 +225,9 @@ export function PayoutCard({
                 </div>
               </div>
               <div className="max-h-80 overflow-auto">
-                {deposit.rows.map((r, i) => (
+                {[...deposit.rows]
+                  .sort((a, b) => Number(isUnmatched(b)) - Number(isUnmatched(a)))
+                  .map((r, i) => (
                   <SourceRow
                     key={i}
                     row={r}
@@ -444,41 +447,38 @@ function InlineRuleForm({
       <div className="grid grid-cols-3 gap-2">
         <div className="grid gap-1">
           <label className="font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">Account</label>
-          <select
+          <SearchableSelect
             value={accountNumber}
-            onChange={(e) => setAccountNumber(Number(e.target.value))}
-            className={`${inputClass} cursor-pointer`}
-          >
-            {accounts.map((a) => (
-              <option key={a.number} value={a.number}>
-                {a.number} — {a.name}{a.category ? ` (${a.category})` : ""}
-              </option>
-            ))}
-          </select>
+            onChange={setAccountNumber}
+            allowEmpty={false}
+            options={accounts.map((a) => ({
+              value: a.number,
+              label: `${a.name}${a.category ? ` (${a.category})` : ""}`,
+              subLabel: String(a.number),
+            }))}
+          />
         </div>
         <div className="grid gap-1">
           <label className="font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">Fund</label>
-          <select
+          <SearchableSelect
             value={fundId}
-            onChange={(e) => setFundId(Number(e.target.value))}
-            className={`${inputClass} cursor-pointer`}
-          >
-            {funds.map((f) => (
-              <option key={f.id} value={f.id}>{f.id} — {f.name}</option>
-            ))}
-          </select>
+            onChange={setFundId}
+            allowEmpty={false}
+            options={funds.map((f) => ({ value: f.id, label: f.name, subLabel: String(f.id) }))}
+          />
         </div>
         <div className="grid gap-1">
           <label className="font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">Ministry</label>
-          <select
+          <SearchableSelect
             value={tagId}
-            onChange={(e) => setTagId(Number(e.target.value))}
-            className={`${inputClass} cursor-pointer`}
-          >
-            {tags.map((t) => (
-              <option key={t.id} value={t.id}>{t.id} — {t.name}{t.category ? ` (${t.category})` : ""}</option>
-            ))}
-          </select>
+            onChange={setTagId}
+            allowEmpty={false}
+            options={tags.map((t) => ({
+              value: t.id,
+              label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+              subLabel: String(t.id),
+            }))}
+          />
         </div>
       </div>
       <div className="flex justify-between items-center mt-1">

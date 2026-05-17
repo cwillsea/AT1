@@ -15,8 +15,9 @@ async function getLastFetchedThrough(): Promise<string | null> {
   return state?.lastFetchedThrough ?? null;
 }
 
-function todayIsoUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function addDaysIso(iso: string, days: number): string {
@@ -38,7 +39,7 @@ export type SquareSyncResult = {
 // The script writes a CSV to square/deposits/ and prints "Wrote N entries".
 export async function syncSquare(): Promise<SquareSyncResult> {
   const last = await getLastFetchedThrough();
-  const endDate = todayIsoUtc();
+  const endDate = todayLocal();
   // No watermark yet: start from a fixed origin date so first-sync windows are
   // predictable instead of relative-to-today. Bump this when going to prod.
   const DEFAULT_ORIGIN = "2026-05-01";

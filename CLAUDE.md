@@ -6,10 +6,14 @@ A church treasury hub. Sits between four data sources (Aplos books, Square POS, 
 
 ```
 at1/
-├── aplos/         Node ESM scripts hitting the Aplos REST API (auth + transactions + lookups)
-├── square/        Node ESM script + `deposits/` CSV exports from Square Payouts API
-├── subsplash/     `transfers/` folder for gifts-*.csv and payments-*.csv (no API yet — see Subsplash notes)
-└── steward/       Next.js 16 + Prisma 7 + SQLite app — the UI + orchestration layer
+├── aplos/              Node ESM scripts hitting the Aplos REST API (auth + transactions + lookups)
+├── square/
+│   ├── index.js        Square Payouts API fetcher — writes CSVs to deposits/
+│   ├── manual-import.js CLI: reads deposits/ + DB rules → writes Aplos import CSV to aplos-imports/
+│   ├── deposits/       CSV exports from Square (one file per sync window)
+│   └── aplos-imports/  Generated Aplos GL import files (output of manual-import.js + /api/square/export)
+├── subsplash/          `transfers/` folder for gifts-*.csv and payments-*.csv (no API yet — see Subsplash notes)
+└── steward/            Next.js 16 + Prisma 7 + SQLite app — the UI + orchestration layer
 ```
 
 **Sibling folders are the raw integrations.** They keep working as CLI scripts independently of `steward/`. Don't move them inside steward — `steward/` imports them via relative paths or spawns them as subprocesses.
@@ -56,12 +60,14 @@ In the steward UI: **`/imports` = Square**, **`/subsplash` = Subsplash**. The To
 src/app/
 ├── layout.tsx                 Shell (Sidebar + TopBar)
 ├── page.tsx                   redirect → /imports
-├── imports/page.tsx           Square Imports (server component, reads ../square/deposits/*.csv)
+├── imports/page.tsx           Square Imports (server component, uses square-csv-server.ts)
 ├── subsplash/page.tsx         Subsplash Imports (server component, reads ../subsplash/transfers/*.csv)
+├── credit-card/page.tsx       Truist commercial card CSV transformer (client-side only, no DB)
 ├── rules/page.tsx             Tabbed rules editor (Square | Subsplash)
 └── api/
     ├── sync/route.ts          POST → runs aplos + square syncs
     ├── sync/status/route.ts   GET  → connector last-sync info for TopBar pills
+    ├── square/export/route.ts GET  → streams Aplos GL import CSV for download
     ├── subsplash/upload/      POST multipart, accepts .csv or .zip → writes to ../subsplash/transfers/
     ├── rules/                 GET + POST + PATCH/DELETE [id]
     ├── manual-mark/route.ts   POST { externalKey, marked }
@@ -76,7 +82,10 @@ src/components/
 ├── PostedShelf.tsx            Reusable collapsible "Previously posted" container
 ├── FlowDiagram.tsx            Square→Aplos 2-lane (NO bank lane in v1)
 ├── SourceChip.tsx             Branded pill for square/subsplash/aplos/truist/manual
-├── SubsplashUploader.tsx      Drop-zone + multipart upload
+├── SubsplashUploader.tsx      Drop-zone + multipart upload for Subsplash CSVs
+├── CreditCardUploader.tsx     Drop-zone for Truist CSVs — transforms + downloads instantly, no server call
+├── GenerateImportButton.tsx   Calls /api/square/export and auto-downloads the resulting CSV
+├── SearchableSelect.tsx       Type-to-filter dropdown replacing native <select> for long Aplos lists
 ├── RulesTabs.tsx              Tab switcher between RulesEditor and SubsplashRulesEditor
 ├── RulesEditor.tsx            Square rules CRUD (regex pattern + account/fund/tag)
 └── SubsplashRulesEditor.tsx   Two sections: gift-funds → purpose, payment-sources → account/fund/tag
@@ -87,7 +96,8 @@ src/lib/
 ├── aplos-auth.ts              In-process port of aplos/auth.js (reads ../aplos/.env)
 ├── aplos-sync.ts              Pulls /accounts, /funds, /tags, /purposes → upserts cache tables
 ├── aplos-lookup.ts            One-shot DB → Map for cheap name lookups per page render
-├── square-csv.ts              Parses all CSVs in ../square/deposits/, classifies rows by Rule[]
+├── square-csv.ts              Pure classifier + rollup types — no filesystem access, safe for client import
+├── square-csv-server.ts       Filesystem loader: reads ../square/deposits/*.csv → Deposit[] (server only)
 ├── square-sync.ts             Spawns node ../square/index.js with computed BEGIN/END_DATE env
 └── subsplash-csv.ts           Parses gifts-*.csv + payments-*.csv, groups by Transfer ID
 ```
@@ -113,6 +123,8 @@ src/lib/
 9. **Subsplash has no free API.** Their developer site is gated behind a sales call. CSV download is the current path. If we ever automate it, do Playwright (cheap) not Chrome MCP via Claude (expensive). See conversation history for cost analysis.
 
 10. **Bash `cd` persistence is real.** The Bash tool keeps cwd across calls. After `cd steward && X`, subsequent calls are already in `steward/`. Don't `cd` again or you'll get "directory not found."
+
+11. **`Deposit.id` is the Square payout UUID, not a date+amount composite.** It comes from the `deposit_id` column in the CSVs (e.g. `po_f6dfff7e-0af8-4843-95cf-b5533c69c223`). Use `deposit.date` (the separate field on the `Deposit` type) when you need the date string for formatting or display. Splitting `deposit.id` on `-` or `:` to extract the date will produce garbage.
 
 ## Conventions (preferred patterns)
 
@@ -142,7 +154,7 @@ Sync new data live: click **Sync data** button in TopBar — runs Aplos + Square
 - Real Aplos posting. The "Post → Aplos" buttons are deliberately disabled with a tooltip explaining the API isn't wired. Use the "Manually posted" checkbox as the substitute for now.
 - Subsplash sync (no API). Users upload CSVs they download from `https://wallet.subsplash.com/transfers`.
 - Auth / multi-user. Single-user local app.
-- Bank reconciliation (Truist). The 3-lane Source→Bank→Book flow from the design prototype is collapsed to 2-lane in v1.
+- Full bank reconciliation (Truist). The Truist credit-card transformer (`/credit-card`) is live but only reformats exports for expense reporting — it doesn't reconcile against Aplos. The 3-lane Source→Bank→Book flow is still collapsed to 2-lane in v1.
 - TopBar Bank + Subsplash sync buttons. Visually present, no-op.
 
 ## When pivoting to production

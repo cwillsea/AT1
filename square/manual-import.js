@@ -116,7 +116,7 @@ for (const f of csvFiles) {
   }
 }
 
-// Group by deposit_date + payout_amount (same key as steward's square-csv.ts)
+// Group by deposit_date + payout_amount to collapse line items into one deposit per payout
 const groups = new Map();
 for (const row of allRows) {
   const key = `${row.depositDate}:${row.payoutAmount.toFixed(2)}`;
@@ -160,6 +160,7 @@ for (const key of sortedKeys) {
   // Rollup: sum totalCollected by account + fund + tag (same bucketing as steward UI)
   const rollupMap = new Map();
   let totalFees = 0;
+  let totalGross = 0;
   for (const r of rows) {
     const rk = `${r.accountNumber}:${r.fundId}:${r.tagId}`;
     const entry = rollupMap.get(rk) ?? {
@@ -171,6 +172,7 @@ for (const key of sortedKeys) {
     entry.amount += r.totalCollected;
     rollupMap.set(rk, entry);
     totalFees += r.fees;
+    totalGross += r.totalCollected;
   }
 
   const splits = [...rollupMap.values()].sort((a, b) => b.amount - a.amount);
@@ -183,7 +185,7 @@ for (const key of sortedKeys) {
 
     if (i === 0) {
       outputRows.push(
-        [fmtDate(date), csvField(`Square Payout ${fmtDate(date)}`), "Square", "", account, fund, "", amount, tag].join(",")
+        [fmtDate(date), csvField(`Square Payout ${fmtDate(date)} Total: $${totalGross.toFixed(2)}`), "Square", "", account, fund, "", amount, tag].join(",")
       );
     } else {
       outputRows.push(["", "", "", "", account, fund, "", amount, tag].join(","));
@@ -196,7 +198,8 @@ for (const key of sortedKeys) {
 
 // ── Write output ─────────────────────────────────────────────────────────────
 
-const today = new Date().toISOString().slice(0, 10);
+const _d = new Date();
+const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
 const outPath = path.join(__dir, `aplos-import-${today}.xlsx`);
 writeFileSync(outPath, outputRows.join("\r\n"), "utf8");
 

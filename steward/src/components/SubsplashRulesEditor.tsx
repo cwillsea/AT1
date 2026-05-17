@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { SearchableSelect, type SearchableOption } from "./SearchableSelect";
 
 type Rule = {
   id: number;
@@ -154,6 +155,27 @@ export function SubsplashRulesEditor({
   const giftPatterns = Array.from(new Set([...observedGiftFunds, ...giftRules.map((r) => r.pattern)])).sort();
   const paymentPatterns = Array.from(new Set([...observedPaymentSources, ...paymentRules.map((r) => r.pattern)])).sort();
 
+  const purposeOptions: SearchableOption[] = purposes.map((p) => ({
+    value: p.id,
+    label: p.name,
+    subLabel: p.incomeAccount ? `acct ${p.incomeAccount}` : undefined,
+  }));
+  const accountOptions: SearchableOption[] = accounts.map((a) => ({
+    value: a.number,
+    label: `${a.name}${a.category ? ` (${a.category})` : ""}`,
+    subLabel: String(a.number),
+  }));
+  const fundOptions: SearchableOption[] = funds.map((f) => ({
+    value: f.id,
+    label: f.name,
+    subLabel: String(f.id),
+  }));
+  const tagOptions: SearchableOption[] = tags.map((t) => ({
+    value: t.id,
+    label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+    subLabel: String(t.id),
+  }));
+
   return (
     <div className="px-8 py-5 flex flex-col gap-6">
       {/* GIFT FUNDS → PURPOSE */}
@@ -181,16 +203,6 @@ export function SubsplashRulesEditor({
           )}
           {giftPatterns.map((pattern) => {
             const rule = giftRules.find((r) => r.pattern === pattern);
-            const purposeOpts = (
-              <>
-                <option value={0}>— pick a purpose —</option>
-                {purposes.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.incomeAccount ? `(acct ${p.incomeAccount})` : ""}
-                  </option>
-                ))}
-              </>
-            );
             const noRule = !rule;
             return (
               <div
@@ -204,17 +216,13 @@ export function SubsplashRulesEditor({
                   )}
                 </div>
                 <div className="px-3 py-2.5">
-                  <select
+                  <SearchableSelect
                     value={rule?.purposeId ?? 0}
                     disabled={busy}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      if (v > 0) upsertGiftRule(pattern, v);
-                    }}
-                    className={`${inputClass} cursor-pointer w-full`}
-                  >
-                    {purposeOpts}
-                  </select>
+                    placeholder="— pick a purpose —"
+                    options={purposeOptions}
+                    onChange={(v) => { if (v > 0) upsertGiftRule(pattern, v); }}
+                  />
                   {rule?.purposeId && (
                     (() => {
                       const p = purposes.find((x) => x.id === rule.purposeId);
@@ -283,38 +291,44 @@ export function SubsplashRulesEditor({
                     <div className="font-ui text-[10.5px] text-honey font-semibold mt-0.5">No rule yet</div>
                   )}
                 </div>
-                <PaymentField
-                  value={rule?.accountNumber ?? 0}
-                  options={accounts.map((a) => ({ value: a.number, label: `${a.number} — ${a.name}` }))}
-                  disabled={busy}
-                  onChange={(n) => upsertPaymentRule(
-                    pattern, n,
-                    rule?.fundId ?? funds[0]?.id ?? 0,
-                    rule?.tagId ?? tags[0]?.id ?? 0,
-                  )}
-                />
-                <PaymentField
-                  value={rule?.fundId ?? 0}
-                  options={funds.map((f) => ({ value: f.id, label: `${f.id} — ${f.name}` }))}
-                  disabled={busy}
-                  onChange={(n) => upsertPaymentRule(
-                    pattern,
-                    rule?.accountNumber ?? accounts[0]?.number ?? 0,
-                    n,
-                    rule?.tagId ?? tags[0]?.id ?? 0,
-                  )}
-                />
-                <PaymentField
-                  value={rule?.tagId ?? 0}
-                  options={tags.map((t) => ({ value: t.id, label: `${t.id} — ${t.name}` }))}
-                  disabled={busy}
-                  onChange={(n) => upsertPaymentRule(
-                    pattern,
-                    rule?.accountNumber ?? accounts[0]?.number ?? 0,
-                    rule?.fundId ?? funds[0]?.id ?? 0,
-                    n,
-                  )}
-                />
+                <div className="px-3 py-2.5">
+                  <SearchableSelect
+                    value={rule?.accountNumber ?? 0}
+                    disabled={busy}
+                    options={accountOptions}
+                    onChange={(n) => { if (n > 0) upsertPaymentRule(
+                      pattern, n,
+                      rule?.fundId ?? funds[0]?.id ?? 0,
+                      rule?.tagId ?? tags[0]?.id ?? 0,
+                    ); }}
+                  />
+                </div>
+                <div className="px-3 py-2.5">
+                  <SearchableSelect
+                    value={rule?.fundId ?? 0}
+                    disabled={busy}
+                    options={fundOptions}
+                    onChange={(n) => { if (n > 0) upsertPaymentRule(
+                      pattern,
+                      rule?.accountNumber ?? accounts[0]?.number ?? 0,
+                      n,
+                      rule?.tagId ?? tags[0]?.id ?? 0,
+                    ); }}
+                  />
+                </div>
+                <div className="px-3 py-2.5">
+                  <SearchableSelect
+                    value={rule?.tagId ?? 0}
+                    disabled={busy}
+                    options={tagOptions}
+                    onChange={(n) => { if (n > 0) upsertPaymentRule(
+                      pattern,
+                      rule?.accountNumber ?? accounts[0]?.number ?? 0,
+                      rule?.fundId ?? funds[0]?.id ?? 0,
+                      n,
+                    ); }}
+                  />
+                </div>
                 <div className="px-3 py-2.5 text-right">
                   {rule && (
                     <button
@@ -342,33 +356,3 @@ export function SubsplashRulesEditor({
   );
 }
 
-function PaymentField({
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  value: number;
-  options: { value: number; label: string }[];
-  disabled: boolean;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="px-3 py-2.5">
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (v > 0) onChange(v);
-        }}
-        className={`${inputClass} cursor-pointer w-full`}
-      >
-        <option value={0}>— pick —</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    </div>
-  );
-}

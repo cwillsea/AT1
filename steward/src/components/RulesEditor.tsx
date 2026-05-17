@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { SearchableSelect, type SearchableOption } from "./SearchableSelect";
 
 type Rule = {
   id: number;
@@ -20,28 +21,6 @@ type FundOpt = { id: number; name: string };
 type TagOpt = { id: number; name: string; category: string | null };
 
 const inputClass = "px-2 py-1 rounded border border-line bg-white font-ui text-[12px] text-ink focus:outline-none focus:border-forest";
-
-function Select({
-  value,
-  onChange,
-  children,
-  className = "",
-}: {
-  value: number;
-  onChange: (n: number) => void;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className={`${inputClass} cursor-pointer ${className}`}
-    >
-      {children}
-    </select>
-  );
-}
 
 export function RulesEditor({
   initialRules,
@@ -145,29 +124,21 @@ export function RulesEditor({
     }
   };
 
-  const accountOptions = (
-    <>
-      {accounts.map((a) => (
-        <option key={a.number} value={a.number}>
-          {a.number} — {a.name}{a.category ? ` (${a.category})` : ""}
-        </option>
-      ))}
-    </>
-  );
-  const fundOptions = (
-    <>
-      {funds.map((f) => (
-        <option key={f.id} value={f.id}>{f.id} — {f.name}</option>
-      ))}
-    </>
-  );
-  const tagOptions = (
-    <>
-      {tags.map((t) => (
-        <option key={t.id} value={t.id}>{t.id} — {t.name}{t.category ? ` (${t.category})` : ""}</option>
-      ))}
-    </>
-  );
+  const accountOptions: SearchableOption[] = accounts.map((a) => ({
+    value: a.number,
+    label: `${a.name}${a.category ? ` (${a.category})` : ""}`,
+    subLabel: String(a.number),
+  }));
+  const fundOptions: SearchableOption[] = funds.map((f) => ({
+    value: f.id,
+    label: f.name,
+    subLabel: String(f.id),
+  }));
+  const tagOptions: SearchableOption[] = tags.map((t) => ({
+    value: t.id,
+    label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+    subLabel: String(t.id),
+  }));
 
   const headerClass = "px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase";
   const cellClass = "px-3 py-2.5 align-top";
@@ -210,13 +181,13 @@ export function RulesEditor({
               <input type="text" value={adding.label ?? ""} onChange={(e) => setAdding({ ...adding, label: e.target.value })} placeholder="Optional friendly label" className={`${inputClass} w-full`} />
             </div>
             <div className={cellClass}>
-              <Select value={adding.accountNumber ?? 0} onChange={(n) => setAdding({ ...adding, accountNumber: n })} className="w-full">{accountOptions}</Select>
+              <SearchableSelect value={adding.accountNumber ?? 0} onChange={(n) => setAdding({ ...adding, accountNumber: n })} options={accountOptions} />
             </div>
             <div className={cellClass}>
-              <Select value={adding.fundId ?? 0} onChange={(n) => setAdding({ ...adding, fundId: n })} className="w-full">{fundOptions}</Select>
+              <SearchableSelect value={adding.fundId ?? 0} onChange={(n) => setAdding({ ...adding, fundId: n })} options={fundOptions} />
             </div>
             <div className={cellClass}>
-              <Select value={adding.tagId ?? 0} onChange={(n) => setAdding({ ...adding, tagId: n })} className="w-full">{tagOptions}</Select>
+              <SearchableSelect value={adding.tagId ?? 0} onChange={(n) => setAdding({ ...adding, tagId: n })} options={tagOptions} />
             </div>
             <div className={cellClass + " text-right flex gap-1.5 justify-end"}>
               <button onClick={submitAdd} disabled={busy} className="px-3 py-1.5 rounded-full bg-forest text-bg font-ui text-[11px] font-semibold cursor-pointer disabled:opacity-60">Add</button>
@@ -253,7 +224,7 @@ export function RulesEditor({
               </div>
               <div className={cellClass}>
                 {editing ? (
-                  <Select value={r.accountNumber ?? 0} onChange={(n) => setDraft({ ...draft, accountNumber: n })} className="w-full">{accountOptions}</Select>
+                  <SearchableSelect value={r.accountNumber ?? 0} onChange={(n) => setDraft({ ...draft, accountNumber: n })} options={accountOptions} />
                 ) : (
                   <div>
                     <div className="font-ui text-[12px] text-ink">{accounts.find((a) => a.number === rule.accountNumber)?.name ?? `Account ${rule.accountNumber}`}</div>
@@ -263,7 +234,7 @@ export function RulesEditor({
               </div>
               <div className={cellClass}>
                 {editing ? (
-                  <Select value={r.fundId ?? 0} onChange={(n) => setDraft({ ...draft, fundId: n })} className="w-full">{fundOptions}</Select>
+                  <SearchableSelect value={r.fundId ?? 0} onChange={(n) => setDraft({ ...draft, fundId: n })} options={fundOptions} />
                 ) : (
                   <div>
                     <div className="font-ui text-[12px] text-ink">{funds.find((f) => f.id === rule.fundId)?.name ?? `Fund ${rule.fundId}`}</div>
@@ -273,7 +244,7 @@ export function RulesEditor({
               </div>
               <div className={cellClass}>
                 {editing ? (
-                  <Select value={r.tagId ?? 0} onChange={(n) => setDraft({ ...draft, tagId: n })} className="w-full">{tagOptions}</Select>
+                  <SearchableSelect value={r.tagId ?? 0} onChange={(n) => setDraft({ ...draft, tagId: n })} options={tagOptions} />
                 ) : (
                   <div>
                     <div className="font-ui text-[12px] text-ink">{tags.find((t) => t.id === rule.tagId)?.name ?? `Tag ${rule.tagId}`}</div>

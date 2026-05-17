@@ -42,7 +42,7 @@ export async function GET() {
   const rows = [HEADER.join(",")];
 
   for (const deposit of pending) {
-    const [date] = deposit.id.split(":");
+    const date = deposit.date;
 
     deposit.rollup.forEach((split, i) => {
       const accountLabel = csvField(`${split.accountNumber} - ${aplosNames.accounts.get(split.accountNumber)?.name ?? `Account ${split.accountNumber}`}`);
@@ -51,7 +51,8 @@ export async function GET() {
       const amount = split.amount.toFixed(2);
 
       if (i === 0) {
-        rows.push([fmtDate(date), csvField(`Square Payout ${fmtDate(date)}`), "Square", "", accountLabel, fund, "", amount, tag].join(","));
+        const depositTotal = deposit.totalGross.toFixed(2);
+        rows.push([fmtDate(date), csvField(`Square Payout ${fmtDate(date)} Total: $${depositTotal}`), "Square", "", accountLabel, fund, "", amount, tag].join(","));
       } else {
         rows.push(["", "", "", "", accountLabel, fund, "", amount, tag].join(","));
       }
@@ -60,7 +61,9 @@ export async function GET() {
     rows.push(["", "", "", "", "5361 - Square Fees", "General Fund", "", `-${deposit.totalFees.toFixed(2)}`, "General"].join(","));
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
   return new NextResponse(rows.join("\r\n"), {
     headers: {
       "Content-Type": "application/octet-stream",
