@@ -104,6 +104,7 @@ export function PayoutCard({
   const toggleManuallyPosted = async () => {
     if (hasUnmatched) return; // belt + suspenders; the input is also disabled
     const next = !manuallyPosted;
+    if (!next && !confirm("Unmark this deposit as posted?")) return;
     onMarkChange(next); // optimistic, parent updates
     setSavingMark(true);
     try {
@@ -132,9 +133,8 @@ export function PayoutCard({
       : "border-line"
     }`}>
       {/* Header row */}
-      <div className="px-[18px] py-3.5 grid grid-cols-[auto_1fr_auto_auto_auto] gap-3.5 items-center">
+      <div onClick={() => setExpanded((v) => !v)} className="px-[18px] py-3.5 grid grid-cols-[auto_1fr_auto_auto_auto] gap-3.5 items-center cursor-pointer">
         <button
-          onClick={() => setExpanded((v) => !v)}
           aria-label={expanded ? "Collapse" : "Expand"}
           className={`w-[26px] h-[26px] rounded-md grid place-items-center text-ink2 ${expanded ? "bg-forest-soft" : "bg-transparent"}`}
         >
@@ -164,6 +164,7 @@ export function PayoutCard({
           <div className="font-ui text-[10.5px] text-ink3 mt-0.5">net of {fmtUSD(feeForDisplay)} fees</div>
         </div>
         <label
+          onClick={(e) => e.stopPropagation()}
           className={`flex items-center gap-2 select-none ${hasUnmatched ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
           title={lockTitle ?? "Mark as already posted to Aplos manually"}
         >
@@ -178,13 +179,7 @@ export function PayoutCard({
             Manually posted
           </span>
         </label>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="px-3 py-2 rounded-full border border-line font-ui text-[12px] text-ink2 cursor-pointer"
-          >
-            {expanded ? "Hide detail" : "Show source detail"}
-          </button>
+        <div onClick={(e) => e.stopPropagation()} className="flex gap-2">
           <button
             disabled
             title={hasUnmatched ? lockTitle : "API posting not wired yet — use Manually posted for now"}

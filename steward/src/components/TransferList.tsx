@@ -5,14 +5,23 @@ import { SubsplashCard } from "./SubsplashCard";
 import { PostedShelf } from "./PostedShelf";
 import type { Transfer } from "@/lib/subsplash-csv";
 
+type PaymentTarget = { accountNumber: number; fundId: number; tagId: number };
+type Names = { accounts: Record<number, string>; funds: Record<number, string>; tags: Record<number, string> };
+
 export function TransferList({
   transfers,
   initialMarkedKeys,
   initialDeletedKeys,
+  giftFundToPurpose = {},
+  paymentSourceToTarget = {},
+  names = { accounts: {}, funds: {}, tags: {} },
 }: {
   transfers: Transfer[];
   initialMarkedKeys: string[];
   initialDeletedKeys: string[];
+  giftFundToPurpose?: Record<string, string | null>;
+  paymentSourceToTarget?: Record<string, PaymentTarget>;
+  names?: Names;
 }) {
   const [marked, setMarked] = useState<Set<string>>(new Set(initialMarkedKeys));
   const [deleted, setDeleted] = useState<Set<string>>(new Set(initialDeletedKeys));
@@ -50,6 +59,9 @@ export function TransferList({
             manuallyPosted={false}
             onMarkChange={(next) => setMark(externalKey(t), next)}
             onDelete={() => markDeleted(externalKey(t))}
+            giftFundToPurpose={giftFundToPurpose}
+            paymentSourceToTarget={paymentSourceToTarget}
+            names={names}
           />
         ))}
         {pending.length === 0 && transfers.length > 0 && (
@@ -67,6 +79,9 @@ export function TransferList({
             manuallyPosted={true}
             onMarkChange={(next) => setMark(externalKey(t), next)}
             onDelete={() => markDeleted(externalKey(t))}
+            giftFundToPurpose={giftFundToPurpose}
+            paymentSourceToTarget={paymentSourceToTarget}
+            names={names}
           />
         ))}
       </PostedShelf>

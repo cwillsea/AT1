@@ -26,7 +26,7 @@ export default async function RulesPage() {
       where: { source: "subsplash-payment" },
       orderBy: [{ pattern: "asc" }],
     }),
-    prisma.account.findMany({ orderBy: { accountNumber: "asc" } }),
+    prisma.account.findMany({ where: { category: { in: ["income", "expense"] } }, orderBy: { accountNumber: "asc" } }),
     prisma.fund.findMany({ orderBy: { name: "asc" } }),
     prisma.tag.findMany({ orderBy: { name: "asc" } }),
     prisma.purpose.findMany({ orderBy: { name: "asc" } }),

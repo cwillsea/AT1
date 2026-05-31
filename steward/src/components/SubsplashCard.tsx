@@ -5,18 +5,36 @@ import { SourceChip } from "./SourceChip";
 import { fmtUSD, fmtShortDate } from "@/lib/fmt";
 import type { Transfer } from "@/lib/subsplash-csv";
 
+type PaymentTarget = { accountNumber: number; fundId: number; tagId: number };
+type Names = { accounts: Record<number, string>; funds: Record<number, string>; tags: Record<number, string> };
+
+const CASH_ACCOUNT = 1110;
+const FEE_ACCOUNT = 5361;
+const FEE_FUND = 521243; // General Fund
+const FEE_TAG = 339561;  // General
+
+function nameOr(table: Record<number, string>, id: number, prefix: string) {
+  return table[id] ?? `${prefix} ${id}`;
+}
+
 export function SubsplashCard({
   transfer,
   manuallyPosted,
   onMarkChange,
   onDelete,
   defaultExpanded = false,
+  giftFundToPurpose = {},
+  paymentSourceToTarget = {},
+  names = { accounts: {}, funds: {}, tags: {} },
 }: {
   transfer: Transfer;
   manuallyPosted: boolean;
   onMarkChange: (next: boolean) => void;
   onDelete: () => void;
   defaultExpanded?: boolean;
+  giftFundToPurpose?: Record<string, string | null>;
+  paymentSourceToTarget?: Record<string, PaymentTarget>;
+  names?: Names;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [savingMark, setSavingMark] = useState(false);
@@ -44,8 +62,34 @@ export function SubsplashCard({
   const totalNet = transfer.giftsTotalNet + transfer.paymentsTotalNet;
   const splitMatchesDeposit = Math.abs(totalNet - transfer.transferAmount) < 0.01;
 
+  // Merge payment rollup lines that resolve to the same Aplos target.
+  type MergedPaymentLine =
+    | { matched: false; paymentSource: string; count: number; gross: number }
+    | { matched: true; accountNumber: number; fundId: number; tagId: number; count: number; gross: number };
+
+  const mergedPaymentRollup: MergedPaymentLine[] = [];
+  const mergedByKey = new Map<string, Extract<MergedPaymentLine, { matched: true }>>();
+  for (const p of transfer.paymentRollup) {
+    const target = paymentSourceToTarget[p.paymentSource];
+    if (!target) {
+      mergedPaymentRollup.push({ matched: false, paymentSource: p.paymentSource, count: p.count, gross: p.gross });
+    } else {
+      const key = `${target.accountNumber}-${target.fundId}-${target.tagId}`;
+      const existing = mergedByKey.get(key);
+      if (existing) {
+        existing.count += p.count;
+        existing.gross += p.gross;
+      } else {
+        const line: Extract<MergedPaymentLine, { matched: true }> = { matched: true, ...target, count: p.count, gross: p.gross };
+        mergedByKey.set(key, line);
+        mergedPaymentRollup.push(line);
+      }
+    }
+  }
+
   const toggleManuallyPosted = async () => {
     const next = !manuallyPosted;
+    if (!next && !confirm("Unmark this transfer as posted?")) return;
     onMarkChange(next);
     setSavingMark(true);
     try {
@@ -65,9 +109,8 @@ export function SubsplashCard({
 
   return (
     <div className={`bg-panel border rounded-2xl overflow-hidden transition-colors ${manuallyPosted ? "border-forest/40 bg-forest-soft/30" : "border-line"}`}>
-      <div className="px-[18px] py-3.5 grid grid-cols-[auto_1fr_auto_auto_auto] gap-3.5 items-center">
+      <div onClick={() => setExpanded((v) => !v)} className="px-[18px] py-3.5 grid grid-cols-[auto_1fr_auto_auto_auto] gap-3.5 items-center cursor-pointer">
         <button
-          onClick={() => setExpanded((v) => !v)}
           aria-label={expanded ? "Collapse" : "Expand"}
           className={`w-[26px] h-[26px] rounded-md grid place-items-center text-ink2 ${expanded ? "bg-forest-soft" : "bg-transparent"}`}
         >
@@ -78,15 +121,9 @@ export function SubsplashCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <SourceChip src="subsplash" />
+            <span className="font-ui text-[13px] text-ink font-semibold">{fmtShortDate(transfer.transferDate)}</span>
             <span className="font-ui text-[13px] text-ink font-semibold">Transfer</span>
-            <span className="font-mono text-[11.5px] text-ink2">#{transfer.id}</span>
-            <span className="font-ui text-[11.5px] text-ink3">·</span>
-            <span className="font-ui text-[11.5px] text-ink3">{transfer.giftCount} gifts</span>
-            <span className="font-ui text-[11.5px] text-ink3">·</span>
-            <span className="font-ui text-[11.5px] text-ink3">{transfer.paymentCount} payments</span>
-          </div>
-          <div className="font-ui text-[11.5px] text-ink3 mt-0.5">
-            Deposited {fmtShortDate(transfer.transferDate)} · {transfer.giftRollup.length} gift fund{transfer.giftRollup.length === 1 ? "" : "s"} + {transfer.paymentRollup.length} payment source{transfer.paymentRollup.length === 1 ? "" : "s"}
+            <span className="font-mono text-[11.5px] text-ink3">#{transfer.id}</span>
           </div>
         </div>
         <div className="text-right">
@@ -97,7 +134,7 @@ export function SubsplashCard({
             net of {fmtUSD(-totalFees)} fees
           </div>
         </div>
-        <label className="flex items-center gap-2 cursor-pointer select-none" title="Mark as already posted to Aplos manually">
+        <label onClick={(e) => e.stopPropagation()} className="flex items-center gap-2 cursor-pointer select-none" title="Mark as already posted to Aplos manually">
           <input
             type="checkbox"
             checked={manuallyPosted}
@@ -109,13 +146,7 @@ export function SubsplashCard({
             Manually posted
           </span>
         </label>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="px-3 py-2 rounded-full border border-line font-ui text-[12px] text-ink2 cursor-pointer"
-          >
-            {expanded ? "Hide detail" : "Show detail"}
-          </button>
+        <div onClick={(e) => e.stopPropagation()} className="flex gap-2">
           <button
             disabled
             title="API posting not wired yet — use Manually posted for now"
@@ -156,15 +187,22 @@ export function SubsplashCard({
                   <div className="text-right">Fee</div>
                   <div className="text-right">Net</div>
                 </div>
-                {transfer.giftRollup.map((g) => (
-                  <div key={g.fund} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
-                    <div className="font-ui text-[12px] text-ink">{g.fund}</div>
-                    <div className="font-mono text-[11px] text-ink2 text-right">{g.count}</div>
-                    <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(g.gross)}</div>
-                    <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-g.fee)}</div>
-                    <div className="font-mono text-[12px] text-forest font-semibold text-right">{fmtUSD(g.net, { sign: true })}</div>
-                  </div>
-                ))}
+                {transfer.giftRollup.map((g) => {
+                  const purpose = giftFundToPurpose[g.fund];
+                  return (
+                    <div key={g.fund} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
+                      <div>
+                        <div className="font-ui text-[12px] text-ink">{purpose ?? g.fund}</div>
+                        {purpose && <div className="font-ui text-[10px] text-ink3">{g.fund}</div>}
+                        {!purpose && <div className="font-ui text-[10px] text-honey font-semibold">No rule</div>}
+                      </div>
+                      <div className="font-mono text-[11px] text-ink2 text-right">{g.count}</div>
+                      <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(g.gross)}</div>
+                      <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-g.fee)}</div>
+                      <div className="font-mono text-[12px] text-forest font-semibold text-right">{fmtUSD(g.net, { sign: true })}</div>
+                    </div>
+                  );
+                })}
                 <div className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 items-center">
                   <div className="font-ui text-[11.5px] text-ink2 font-semibold">Total</div>
                   <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{transfer.giftCount}</div>
@@ -194,46 +232,83 @@ export function SubsplashCard({
               </details>
             </div>
 
-            {/* Payments section */}
+            {/* Payments section — split entry preview */}
             <div className="bg-panel border border-line rounded-[10px] overflow-hidden">
-              <div className="px-3.5 py-2.5 border-b border-line2 flex items-center justify-between">
-                <div>
-                  <div className="font-ui text-[10px] text-ink3 tracking-[0.08em] uppercase">Payments → Register transaction</div>
-                  <div className="font-ui text-[12.5px] text-ink font-semibold mt-0.5">
-                    {transfer.paymentCount} payment{transfer.paymentCount === 1 ? "" : "s"} · {fmtUSD(transfer.paymentsTotalNet, { sign: true })} net
-                  </div>
+              <div className="px-3.5 py-2.5 border-b border-line2">
+                <div className="font-ui text-[10px] text-ink3 tracking-[0.08em] uppercase">Split entry preview · posts to Aplos</div>
+                <div className="font-ui text-[12.5px] text-ink font-semibold mt-0.5">
+                  {mergedPaymentRollup.length} payment line{mergedPaymentRollup.length === 1 ? "" : "s"}
+                  {transfer.paymentsTotalFees > 0 ? " + 1 fee line" : ""} + cash to {nameOr(names.accounts, CASH_ACCOUNT, "Account")}
                 </div>
-                <span className="font-ui text-[10px] text-ink3">posts to /transactions</span>
               </div>
               <div>
-                <div className="px-3.5 py-1.5 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">
-                  <div>Payment source</div>
-                  <div className="text-right">Ct</div>
-                  <div className="text-right">Gross</div>
-                  <div className="text-right">Fee</div>
-                  <div className="text-right">Net</div>
+                <div className="px-3.5 py-1.5 grid grid-cols-[1.4fr_1.1fr_1fr_auto] gap-2 bg-line2 font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">
+                  <div>Account</div>
+                  <div>Fund</div>
+                  <div>Ministry</div>
+                  <div className="text-right">Amount</div>
                 </div>
-                {transfer.paymentRollup.map((p) => (
-                  <div key={p.paymentSource} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
-                    <div className="font-ui text-[12px] text-ink">{p.paymentSource}</div>
-                    <div className="font-mono text-[11px] text-ink2 text-right">{p.count}</div>
-                    <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(p.gross)}</div>
-                    <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-p.fee)}</div>
-                    <div className={`font-mono text-[12px] font-semibold text-right ${p.net < 0 ? "text-clay" : "text-forest"}`}>{fmtUSD(p.net, { sign: true })}</div>
-                  </div>
-                ))}
-                {transfer.paymentRollup.length === 0 && (
+                {mergedPaymentRollup.length === 0 && (
                   <div className="px-3.5 py-3 font-ui text-[11.5px] text-ink3 italic">No payment rows in this transfer</div>
                 )}
-                <div className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 items-center">
-                  <div className="font-ui text-[11.5px] text-ink2 font-semibold">Total</div>
-                  <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{transfer.paymentCount}</div>
-                  <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{fmtUSD(transfer.paymentRollup.reduce((s, p) => s + p.gross, 0))}</div>
-                  <div className="font-mono text-[11.5px] text-clay font-semibold text-right">{fmtUSD(-transfer.paymentsTotalFees)}</div>
-                  <div className={`font-mono text-[11.5px] font-semibold text-right ${transfer.paymentsTotalNet < 0 ? "text-clay" : "text-forest"}`}>{fmtUSD(transfer.paymentsTotalNet, { sign: true })}</div>
+                {mergedPaymentRollup.map((p, i) => p.matched ? (
+                  <div key={i} className="px-3.5 py-2.5 border-b border-line2 grid grid-cols-[1.4fr_1.1fr_1fr_auto] gap-2 items-start">
+                    <div>
+                      <div className="font-ui text-[12px] font-medium leading-tight text-ink">{nameOr(names.accounts, p.accountNumber, "Account")}</div>
+                      <div className="font-mono text-[10px] text-ink3 mt-0.5">{p.accountNumber}</div>
+                    </div>
+                    <div>
+                      <div className="font-ui text-[11.5px] text-ink leading-tight">{nameOr(names.funds, p.fundId, "Fund")}</div>
+                      <div className="font-mono text-[10px] text-ink3 mt-0.5">{p.fundId}</div>
+                    </div>
+                    <div>
+                      <div className="font-ui text-[11.5px] text-ink leading-tight">{nameOr(names.tags, p.tagId, "Tag")}</div>
+                      <div className="font-mono text-[10px] text-ink3 mt-0.5">{p.tagId}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-mono text-[12px] font-semibold ${p.gross < 0 ? "text-clay" : "text-forest"}`}>{fmtUSD(p.gross, { sign: true })}</div>
+                      <div className="font-ui text-[10px] text-ink3 mt-0.5">{p.count} item{p.count > 1 ? "s" : ""}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={i} className="px-3.5 py-2.5 border-b border-line2 grid grid-cols-[1.4fr_1.1fr_1fr_auto] gap-2 items-start bg-honey-soft/40">
+                    <div>
+                      <div className="font-ui text-[12px] font-medium leading-tight text-honey">Unmatched — no rule</div>
+                      <div className="font-ui text-[10px] text-ink3 mt-0.5">{p.paymentSource}</div>
+                    </div>
+                    <div className="font-ui text-[11.5px] text-ink3">—</div>
+                    <div className="font-ui text-[11.5px] text-ink3">—</div>
+                    <div className="text-right">
+                      <div className="font-mono text-[12px] font-semibold text-honey">{fmtUSD(p.gross, { sign: true })}</div>
+                      <div className="font-ui text-[10px] text-ink3 mt-0.5">{p.count} item{p.count > 1 ? "s" : ""}</div>
+                    </div>
+                  </div>
+                ))}
+                {transfer.paymentsTotalFees > 0 && (
+                  <div className="px-3.5 py-2.5 border-b border-line2 grid grid-cols-[1.4fr_1.1fr_1fr_auto] gap-2 items-start">
+                    <div>
+                      <div className="font-ui text-[12px] text-ink font-medium leading-tight">Subsplash fees</div>
+                      <div className="font-mono text-[10px] text-ink3 mt-0.5">{FEE_ACCOUNT}</div>
+                    </div>
+                    <div>
+                      <div className="font-ui text-[11.5px] text-ink leading-tight">{nameOr(names.funds, FEE_FUND, "Fund")}</div>
+                      <div className="font-mono text-[10px] text-ink3 mt-0.5">{FEE_FUND}</div>
+                    </div>
+                    <div>
+                      <div className="font-ui text-[11.5px] text-ink leading-tight">{nameOr(names.tags, FEE_TAG, "Tag")}</div>
+                      <div className="font-mono text-[10px] text-ink3 mt-0.5">{FEE_TAG}</div>
+                    </div>
+                    <div className="font-mono text-[12px] text-clay font-semibold text-right">{fmtUSD(-transfer.paymentsTotalFees)}</div>
+                  </div>
+                )}
+                <div className="px-3.5 py-3 grid grid-cols-[1fr_auto] gap-2.5 items-center bg-forest-soft border-t border-line">
+                  <div>
+                    <div className="font-ui text-[12px] text-forest font-semibold">Cash → {nameOr(names.accounts, CASH_ACCOUNT, "Account")}</div>
+                    <div className="font-mono text-[10px] text-forest/70 mt-0.5">{CASH_ACCOUNT}</div>
+                  </div>
+                  <div className="font-mono text-[13px] text-forest font-bold">{fmtUSD(transfer.paymentsTotalNet, { sign: true })}</div>
                 </div>
               </div>
-
               <details className="px-3.5 py-2 border-t border-line2">
                 <summary className="cursor-pointer font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">
                   Show all {transfer.paymentCount} payment lines

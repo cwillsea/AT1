@@ -126,8 +126,9 @@ export function RulesEditor({
 
   const accountOptions: SearchableOption[] = accounts.map((a) => ({
     value: a.number,
-    label: `${a.name}${a.category ? ` (${a.category})` : ""}`,
+    label: a.name,
     subLabel: String(a.number),
+    group: a.category === "income" ? "Income" : a.category === "expense" ? "Expense" : undefined,
   }));
   const fundOptions: SearchableOption[] = funds.map((f) => ({
     value: f.id,
@@ -136,7 +137,7 @@ export function RulesEditor({
   }));
   const tagOptions: SearchableOption[] = tags.map((t) => ({
     value: t.id,
-    label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+    label: t.name,
     subLabel: String(t.id),
   }));
 

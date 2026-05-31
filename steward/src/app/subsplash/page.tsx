@@ -20,10 +20,36 @@ export default async function SubsplashPage() {
     loadError = e instanceof Error ? e.message : String(e);
   }
 
-  const [manualMarks, deletedRows] = await Promise.all([
+  const [manualMarks, deletedRows, giftRules, paymentRules, purposes, accounts, funds, tags] = await Promise.all([
     prisma.manualMark.findMany({ where: { source: "subsplash" } }),
     prisma.deletedDeposit.findMany({ where: { source: "subsplash" } }),
+    prisma.categorizationRule.findMany({ where: { source: "subsplash-gift" } }),
+    prisma.categorizationRule.findMany({ where: { source: "subsplash-payment" } }),
+    prisma.purpose.findMany(),
+    prisma.account.findMany(),
+    prisma.fund.findMany(),
+    prisma.tag.findMany(),
   ]);
+
+  const purposeById = new Map(purposes.map((p) => [p.id, p.name]));
+  const giftFundToPurpose = new Map(
+    giftRules
+      .filter((r) => r.purposeId !== null)
+      .map((r) => [r.pattern, purposeById.get(r.purposeId!) ?? null])
+  );
+
+  type PaymentTarget = { accountNumber: number; fundId: number; tagId: number };
+  const paymentSourceToTarget = new Map<string, PaymentTarget>(
+    paymentRules
+      .filter((r) => r.accountNumber && r.fundId && r.tagId)
+      .map((r) => [r.pattern, { accountNumber: r.accountNumber!, fundId: r.fundId!, tagId: r.tagId! }])
+  );
+
+  const names = {
+    accounts: Object.fromEntries(accounts.map((a) => [a.accountNumber, a.name])),
+    funds: Object.fromEntries(funds.map((f) => [f.id, f.name])),
+    tags: Object.fromEntries(tags.map((t) => [t.id, t.name])),
+  };
   const manuallyPosted = new Set(manualMarks.filter((m) => m.marked).map((m) => m.externalKey));
   const deletedSet = new Set(deletedRows.map((r) => r.externalKey));
 
@@ -93,6 +119,9 @@ export default async function SubsplashPage() {
           transfers={transfers}
           initialMarkedKeys={[...manuallyPosted]}
           initialDeletedKeys={[...deletedSet]}
+          giftFundToPurpose={Object.fromEntries(giftFundToPurpose)}
+          paymentSourceToTarget={Object.fromEntries(paymentSourceToTarget)}
+          names={names}
         />
       </div>
     </>

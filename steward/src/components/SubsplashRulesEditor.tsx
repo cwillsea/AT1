@@ -47,9 +47,14 @@ export function SubsplashRulesEditor({
   const [giftRules, setGiftRules] = useState(initialGiftRules);
   const [paymentRules, setPaymentRules] = useState(initialPaymentRules);
   const [busy, setBusy] = useState(false);
+  const [pendingGiftPurposes, setPendingGiftPurposes] = useState<Map<string, number>>(new Map());
+  const [pendingPaymentAccounts, setPendingPaymentAccounts] = useState<Map<string, number>>(new Map());
+  const [pendingPaymentFunds, setPendingPaymentFunds] = useState<Map<string, number>>(new Map());
+  const [pendingPaymentTags, setPendingPaymentTags] = useState<Map<string, number>>(new Map());
 
   // GIFT helpers — single field: purpose
   const upsertGiftRule = async (pattern: string, purposeId: number) => {
+    setPendingGiftPurposes((prev) => new Map(prev).set(pattern, purposeId));
     setBusy(true);
     try {
       const existing = giftRules.find((r) => r.pattern === pattern);
@@ -97,6 +102,9 @@ export function SubsplashRulesEditor({
     fundId: number,
     tagId: number,
   ) => {
+    setPendingPaymentAccounts((prev) => new Map(prev).set(pattern, accountNumber));
+    setPendingPaymentFunds((prev) => new Map(prev).set(pattern, fundId));
+    setPendingPaymentTags((prev) => new Map(prev).set(pattern, tagId));
     setBusy(true);
     try {
       const existing = paymentRules.find((r) => r.pattern === pattern);
@@ -158,12 +166,12 @@ export function SubsplashRulesEditor({
   const purposeOptions: SearchableOption[] = purposes.map((p) => ({
     value: p.id,
     label: p.name,
-    subLabel: p.incomeAccount ? `acct ${p.incomeAccount}` : undefined,
   }));
   const accountOptions: SearchableOption[] = accounts.map((a) => ({
     value: a.number,
-    label: `${a.name}${a.category ? ` (${a.category})` : ""}`,
+    label: a.name,
     subLabel: String(a.number),
+    group: a.category === "income" ? "Income" : a.category === "expense" ? "Expense" : undefined,
   }));
   const fundOptions: SearchableOption[] = funds.map((f) => ({
     value: f.id,
@@ -172,7 +180,7 @@ export function SubsplashRulesEditor({
   }));
   const tagOptions: SearchableOption[] = tags.map((t) => ({
     value: t.id,
-    label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+    label: t.name,
     subLabel: String(t.id),
   }));
 
@@ -190,8 +198,8 @@ export function SubsplashRulesEditor({
           </div>
         </div>
 
-        <div className="bg-panel border border-line rounded-2xl overflow-hidden">
-          <div className="grid grid-cols-[1.4fr_2fr_auto] bg-line2 border-b border-line">
+        <div className="bg-panel border border-line rounded-2xl">
+          <div className="grid grid-cols-[1.4fr_2fr_5rem] bg-line2 border-b border-line rounded-t-2xl overflow-hidden">
             <div className="px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase">Subsplash fund (CSV value)</div>
             <div className="px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase">Aplos purpose</div>
             <div className="px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase text-right">Actions</div>
@@ -207,7 +215,7 @@ export function SubsplashRulesEditor({
             return (
               <div
                 key={pattern}
-                className={`grid grid-cols-[1.4fr_2fr_auto] border-b border-line2 items-center ${noRule ? "bg-honey-soft/30" : ""}`}
+                className={`grid grid-cols-[1.4fr_2fr_5rem] border-b border-line2 items-center ${noRule ? "bg-honey-soft/30" : ""}`}
               >
                 <div className="px-3 py-2.5">
                   <div className="font-ui text-[12.5px] text-ink font-medium">{pattern}</div>
@@ -217,7 +225,7 @@ export function SubsplashRulesEditor({
                 </div>
                 <div className="px-3 py-2.5">
                   <SearchableSelect
-                    value={rule?.purposeId ?? 0}
+                    value={pendingGiftPurposes.get(pattern) ?? rule?.purposeId ?? 0}
                     disabled={busy}
                     placeholder="— pick a purpose —"
                     options={purposeOptions}
@@ -264,8 +272,8 @@ export function SubsplashRulesEditor({
           </div>
         </div>
 
-        <div className="bg-panel border border-line rounded-2xl overflow-hidden">
-          <div className="grid grid-cols-[1.6fr_1.2fr_1.2fr_1.2fr_auto] bg-line2 border-b border-line">
+        <div className="bg-panel border border-line rounded-2xl">
+          <div className="grid grid-cols-[1.6fr_1.2fr_1.2fr_1.2fr_5rem] bg-line2 border-b border-line rounded-t-2xl overflow-hidden">
             <div className="px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase">Payment source</div>
             <div className="px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase">Account</div>
             <div className="px-3 py-2 font-ui text-[10px] text-ink3 tracking-[0.06em] uppercase">Fund</div>
@@ -283,7 +291,7 @@ export function SubsplashRulesEditor({
             return (
               <div
                 key={pattern}
-                className={`grid grid-cols-[1.6fr_1.2fr_1.2fr_1.2fr_auto] border-b border-line2 items-center ${noRule ? "bg-honey-soft/30" : ""}`}
+                className={`grid grid-cols-[1.6fr_1.2fr_1.2fr_1.2fr_5rem] border-b border-line2 items-center ${noRule ? "bg-honey-soft/30" : ""}`}
               >
                 <div className="px-3 py-2.5">
                   <div className="font-ui text-[12.5px] text-ink font-medium">{pattern}</div>
@@ -293,40 +301,44 @@ export function SubsplashRulesEditor({
                 </div>
                 <div className="px-3 py-2.5">
                   <SearchableSelect
-                    value={rule?.accountNumber ?? 0}
+                    value={pendingPaymentAccounts.get(pattern) ?? rule?.accountNumber ?? 0}
                     disabled={busy}
                     options={accountOptions}
-                    onChange={(n) => { if (n > 0) upsertPaymentRule(
-                      pattern, n,
-                      rule?.fundId ?? funds[0]?.id ?? 0,
-                      rule?.tagId ?? tags[0]?.id ?? 0,
-                    ); }}
+                    onChange={(n) => {
+                      if (n <= 0) return;
+                      const fund = pendingPaymentFunds.get(pattern) ?? rule?.fundId ?? 0;
+                      const tag = pendingPaymentTags.get(pattern) ?? rule?.tagId ?? 0;
+                      if (fund > 0 && tag > 0) upsertPaymentRule(pattern, n, fund, tag);
+                      else setPendingPaymentAccounts((prev) => new Map(prev).set(pattern, n));
+                    }}
                   />
                 </div>
                 <div className="px-3 py-2.5">
                   <SearchableSelect
-                    value={rule?.fundId ?? 0}
+                    value={pendingPaymentFunds.get(pattern) ?? rule?.fundId ?? 0}
                     disabled={busy}
                     options={fundOptions}
-                    onChange={(n) => { if (n > 0) upsertPaymentRule(
-                      pattern,
-                      rule?.accountNumber ?? accounts[0]?.number ?? 0,
-                      n,
-                      rule?.tagId ?? tags[0]?.id ?? 0,
-                    ); }}
+                    onChange={(n) => {
+                      if (n <= 0) return;
+                      const account = pendingPaymentAccounts.get(pattern) ?? rule?.accountNumber ?? 0;
+                      const tag = pendingPaymentTags.get(pattern) ?? rule?.tagId ?? 0;
+                      if (account > 0 && tag > 0) upsertPaymentRule(pattern, account, n, tag);
+                      else setPendingPaymentFunds((prev) => new Map(prev).set(pattern, n));
+                    }}
                   />
                 </div>
                 <div className="px-3 py-2.5">
                   <SearchableSelect
-                    value={rule?.tagId ?? 0}
+                    value={pendingPaymentTags.get(pattern) ?? rule?.tagId ?? 0}
                     disabled={busy}
                     options={tagOptions}
-                    onChange={(n) => { if (n > 0) upsertPaymentRule(
-                      pattern,
-                      rule?.accountNumber ?? accounts[0]?.number ?? 0,
-                      rule?.fundId ?? funds[0]?.id ?? 0,
-                      n,
-                    ); }}
+                    onChange={(n) => {
+                      if (n <= 0) return;
+                      const account = pendingPaymentAccounts.get(pattern) ?? rule?.accountNumber ?? 0;
+                      const fund = pendingPaymentFunds.get(pattern) ?? rule?.fundId ?? 0;
+                      if (account > 0 && fund > 0) upsertPaymentRule(pattern, account, fund, n);
+                      else setPendingPaymentTags((prev) => new Map(prev).set(pattern, n));
+                    }}
                   />
                 </div>
                 <div className="px-3 py-2.5 text-right">
