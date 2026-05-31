@@ -74,7 +74,10 @@ function parseCsv(text: string): { header: string[]; rows: string[][] } {
       if (c === '"') inQuotes = true;
       else if (c === ",") { row.push(field); field = ""; }
       else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
-      else if (c === "\r") { /* skip */ }
+      else if (c === "\r") {
+        // bare CR (old Mac) acts as line terminator; CRLF: the \n will follow and push an empty row which gets filtered
+        if (text[i + 1] !== "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      }
       else field += c;
     }
   }
@@ -175,7 +178,11 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
   // Dedupe by Gift ID / Payment ID (in case of overlapping uploads)
   const seenGifts = new Set<string>();
   const dedupedGifts = allGifts.filter((g) => {
-    const k = g.giftId || `${g.transferId}|${g.transactionTimestamp}|${g.email}|${g.grossAmount}`;
+    // Include grossAmount: Subsplash reuses the same Gift ID when one donor gives to multiple
+    // funds in a single session, so giftId alone isn't unique across split donations.
+    const k = g.giftId
+      ? `${g.giftId}|${g.grossAmount}`
+      : `${g.transferId}|${g.transactionTimestamp}|${g.email}|${g.grossAmount}`;
     if (seenGifts.has(k)) return false;
     seenGifts.add(k);
     return true;

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
 import { prisma } from "@/lib/db";
 import { loadAllDeposits } from "@/lib/square-csv-server";
 import { loadAplosNames } from "@/lib/aplos-lookup";
@@ -6,12 +7,6 @@ import { loadAplosNames } from "@/lib/aplos-lookup";
 function fmtDate(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${m}/${d}/${y}`;
-}
-
-function csvField(val: string) {
-  return val.includes(",") || val.includes('"') || val.includes("\n")
-    ? `"${val.replace(/"/g, '""')}"`
-    : val;
 }
 
 export async function GET() {
@@ -39,34 +34,38 @@ export async function GET() {
   const pending = deposits.filter((d) => !manuallyPosted.has(d.id) && !deletedSet.has(d.id));
 
   const HEADER = ["Date", "Note/Memo", "Payee", "Check #", "Account", "Fund", "Comment", "Amount", "Tags: Ministry"];
-  const rows = [HEADER.join(",")];
+  const rows: string[][] = [HEADER];
 
   for (const deposit of pending) {
     const date = deposit.date;
 
     deposit.rollup.forEach((split, i) => {
-      const accountLabel = csvField(`${split.accountNumber} - ${aplosNames.accounts.get(split.accountNumber)?.name ?? `Account ${split.accountNumber}`}`);
-      const fund = csvField(aplosNames.funds.get(split.fundId) ?? `Fund ${split.fundId}`);
-      const tag = csvField(aplosNames.tags.get(split.tagId)?.name ?? "");
+      const accountLabel = `${split.accountNumber} - ${aplosNames.accounts.get(split.accountNumber)?.name ?? `Account ${split.accountNumber}`}`;
+      const fund = aplosNames.funds.get(split.fundId) ?? `Fund ${split.fundId}`;
+      const tag = aplosNames.tags.get(split.tagId)?.name ?? "";
       const amount = split.amount.toFixed(2);
 
       if (i === 0) {
-        const depositTotal = deposit.totalGross.toFixed(2);
-        rows.push([fmtDate(date), csvField(`Square Payout ${fmtDate(date)} Total: $${depositTotal}`), "Square", "", accountLabel, fund, "", amount, tag].join(","));
+        rows.push([fmtDate(date), `Square Payout ${fmtDate(date)}`, "Square", "", accountLabel, fund, "", amount, tag]);
       } else {
-        rows.push(["", "", "", "", accountLabel, fund, "", amount, tag].join(","));
+        rows.push(["", "", "", "", accountLabel, fund, "", amount, tag]);
       }
     });
 
-    rows.push(["", "", "", "", "5361 - Square Fees", "General Fund", "", `-${deposit.totalFees.toFixed(2)}`, "General"].join(","));
+    rows.push(["", "", "", "", "5361 - Square Fees", "General Fund", "", `-${deposit.totalFees.toFixed(2)}`, "General"]);
   }
 
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-  return new NextResponse(rows.join("\r\n"), {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Import");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+  return new NextResponse(buf, {
     headers: {
-      "Content-Type": "application/octet-stream",
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="aplos-import-${today}.xlsx"`,
     },
   });

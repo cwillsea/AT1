@@ -3,13 +3,14 @@
 // Run:    node square/manual-import.js
 // Output: square/aplos-import-<today>.xlsx
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const __dir = path.dirname(fileURLToPath(import.meta.url));
+const XLSX = require(path.join(__dir, "../steward/node_modules/xlsx"));
 
 const Database = require(path.join(__dir, "../steward/node_modules/better-sqlite3"));
 
@@ -138,29 +139,21 @@ function fmtDate(iso) {
   return `${m}/${d}/${y}`;
 }
 
-function csvField(val) {
-  const s = String(val ?? "");
-  return s.includes(",") || s.includes('"') || s.includes("\n")
-    ? `"${s.replace(/"/g, '""')}"`
-    : s;
-}
-
 // ── Build output rows ────────────────────────────────────────────────────────
 
 const HEADER = ["Date", "Note/Memo", "Payee", "Check #", "Account", "Fund", "Comment", "Amount", "Tags: Ministry"];
-const outputRows = [HEADER.join(",")];
+const outputRows = [HEADER];
 
 // Newest deposit first
 const sortedKeys = [...groups.keys()].sort().reverse();
 
 for (const key of sortedKeys) {
   const rows = groups.get(key);
-  const [date, payoutStr] = key.split(":");
+  const [date] = key.split(":");
 
-  // Rollup: sum totalCollected by account + fund + tag (same bucketing as steward UI)
+  // Rollup: sum totalCollected by account + fund + tag
   const rollupMap = new Map();
   let totalFees = 0;
-  let totalGross = 0;
   for (const r of rows) {
     const rk = `${r.accountNumber}:${r.fundId}:${r.tagId}`;
     const entry = rollupMap.get(rk) ?? {
@@ -172,36 +165,36 @@ for (const key of sortedKeys) {
     entry.amount += r.totalCollected;
     rollupMap.set(rk, entry);
     totalFees += r.fees;
-    totalGross += r.totalCollected;
   }
 
   const splits = [...rollupMap.values()].sort((a, b) => b.amount - a.amount);
 
   splits.forEach((split, i) => {
-    const account = csvField(fmtAccount(split.accountNumber));
-    const fund = csvField(fundMap.get(split.fundId) ?? `Fund ${split.fundId}`);
-    const tag = csvField(tagMap.get(split.tagId) ?? "");
+    const account = fmtAccount(split.accountNumber);
+    const fund = fundMap.get(split.fundId) ?? `Fund ${split.fundId}`;
+    const tag = tagMap.get(split.tagId) ?? "";
     const amount = split.amount.toFixed(2);
 
     if (i === 0) {
-      outputRows.push(
-        [fmtDate(date), csvField(`Square Payout ${fmtDate(date)} Total: $${totalGross.toFixed(2)}`), "Square", "", account, fund, "", amount, tag].join(",")
-      );
+      outputRows.push([fmtDate(date), `Square Payout ${fmtDate(date)}`, "Square", "", account, fund, "", amount, tag]);
     } else {
-      outputRows.push(["", "", "", "", account, fund, "", amount, tag].join(","));
+      outputRows.push(["", "", "", "", account, fund, "", amount, tag]);
     }
   });
 
-  // Square fees as a separate expense split (negative to offset gross income)
-  outputRows.push(["", "", "", "", "5361 - Square Fees", "General Fund", "", `-${totalFees.toFixed(2)}`, "General"].join(","));
+  outputRows.push(["", "", "", "", "5361 - Square Fees", "General Fund", "", `-${totalFees.toFixed(2)}`, "General"]);
 }
 
-// ── Write output ─────────────────────────────────────────────────────────────
+// ── Write real XLSX ───────────────────────────────────────────────────────────
 
 const _d = new Date();
 const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
-const outPath = path.join(__dir, `aplos-import-${today}.xlsx`);
-writeFileSync(outPath, outputRows.join("\r\n"), "utf8");
+const outPath = path.join(__dir, "aplos-imports", `aplos-import-${today}.xlsx`);
+
+const ws = XLSX.utils.aoa_to_sheet(outputRows);
+const wb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb, ws, "Import");
+XLSX.writeFile(wb, outPath);
 
 console.log(`\nWritten: ${outPath}`);
 console.log(`${sortedKeys.length} deposit(s), ${outputRows.length - 1} split rows`);

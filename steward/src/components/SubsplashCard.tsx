@@ -149,22 +149,28 @@ export function SubsplashCard({
                 <span className="font-ui text-[10px] text-ink3">posts to /contributions</span>
               </div>
               <div>
-                <div className="px-3.5 py-1.5 grid grid-cols-[1.5fr_auto_auto] gap-2 bg-line2 font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">
+                <div className="px-3.5 py-1.5 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">
                   <div>Fund (purpose)</div>
-                  <div className="text-right">Count</div>
+                  <div className="text-right">Ct</div>
+                  <div className="text-right">Gross</div>
+                  <div className="text-right">Fee</div>
                   <div className="text-right">Net</div>
                 </div>
                 {transfer.giftRollup.map((g) => (
-                  <div key={g.fund} className="px-3.5 py-2 grid grid-cols-[1.5fr_auto_auto] gap-2 border-b border-line2 items-center">
+                  <div key={g.fund} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
                     <div className="font-ui text-[12px] text-ink">{g.fund}</div>
-                    <div className="font-mono text-[11.5px] text-ink2 text-right">{g.count}</div>
+                    <div className="font-mono text-[11px] text-ink2 text-right">{g.count}</div>
+                    <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(g.gross)}</div>
+                    <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-g.fee)}</div>
                     <div className="font-mono text-[12px] text-forest font-semibold text-right">{fmtUSD(g.net, { sign: true })}</div>
                   </div>
                 ))}
-                <div className="px-3.5 py-2 grid grid-cols-[1.5fr_auto_auto] gap-2 bg-line2 items-center">
-                  <div className="font-ui text-[11.5px] text-ink2">Square fees</div>
-                  <div className="font-mono text-[10px] text-ink3 text-right">—</div>
+                <div className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 items-center">
+                  <div className="font-ui text-[11.5px] text-ink2 font-semibold">Total</div>
+                  <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{transfer.giftCount}</div>
+                  <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{fmtUSD(transfer.giftRollup.reduce((s, g) => s + g.gross, 0))}</div>
                   <div className="font-mono text-[11.5px] text-clay font-semibold text-right">{fmtUSD(-transfer.giftsTotalFees)}</div>
+                  <div className="font-mono text-[11.5px] text-forest font-semibold text-right">{fmtUSD(transfer.giftsTotalNet, { sign: true })}</div>
                 </div>
               </div>
 
@@ -174,7 +180,7 @@ export function SubsplashCard({
                 </summary>
                 <div className="mt-2 max-h-72 overflow-auto">
                   {transfer.gifts.map((g) => (
-                    <div key={g.giftId} className="py-1.5 grid grid-cols-[1fr_auto] gap-2 items-center text-[11px] font-ui">
+                    <div key={`${g.giftId}|${g.grossAmount}`} className="py-1.5 grid grid-cols-[1fr_auto] gap-2 items-center text-[11px] font-ui">
                       <div className="min-w-0">
                         <div className="text-ink whitespace-nowrap overflow-hidden text-ellipsis">
                           {[g.firstName, g.lastName].filter(Boolean).join(" ") || g.email || "(unknown)"} <span className="text-ink3">· {g.fund}</span>
@@ -200,25 +206,31 @@ export function SubsplashCard({
                 <span className="font-ui text-[10px] text-ink3">posts to /transactions</span>
               </div>
               <div>
-                <div className="px-3.5 py-1.5 grid grid-cols-[1.5fr_auto_auto] gap-2 bg-line2 font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">
+                <div className="px-3.5 py-1.5 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 font-ui text-[9.5px] text-ink3 tracking-[0.06em] uppercase">
                   <div>Payment source</div>
-                  <div className="text-right">Count</div>
+                  <div className="text-right">Ct</div>
+                  <div className="text-right">Gross</div>
+                  <div className="text-right">Fee</div>
                   <div className="text-right">Net</div>
                 </div>
                 {transfer.paymentRollup.map((p) => (
-                  <div key={p.paymentSource} className="px-3.5 py-2 grid grid-cols-[1.5fr_auto_auto] gap-2 border-b border-line2 items-center">
+                  <div key={p.paymentSource} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
                     <div className="font-ui text-[12px] text-ink">{p.paymentSource}</div>
-                    <div className="font-mono text-[11.5px] text-ink2 text-right">{p.count}</div>
-                    <div className="font-mono text-[12px] text-forest font-semibold text-right">{fmtUSD(p.net, { sign: true })}</div>
+                    <div className="font-mono text-[11px] text-ink2 text-right">{p.count}</div>
+                    <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(p.gross)}</div>
+                    <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-p.fee)}</div>
+                    <div className={`font-mono text-[12px] font-semibold text-right ${p.net < 0 ? "text-clay" : "text-forest"}`}>{fmtUSD(p.net, { sign: true })}</div>
                   </div>
                 ))}
                 {transfer.paymentRollup.length === 0 && (
                   <div className="px-3.5 py-3 font-ui text-[11.5px] text-ink3 italic">No payment rows in this transfer</div>
                 )}
-                <div className="px-3.5 py-2 grid grid-cols-[1.5fr_auto_auto] gap-2 bg-line2 items-center">
-                  <div className="font-ui text-[11.5px] text-ink2">Square fees</div>
-                  <div className="font-mono text-[10px] text-ink3 text-right">—</div>
+                <div className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 items-center">
+                  <div className="font-ui text-[11.5px] text-ink2 font-semibold">Total</div>
+                  <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{transfer.paymentCount}</div>
+                  <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{fmtUSD(transfer.paymentRollup.reduce((s, p) => s + p.gross, 0))}</div>
                   <div className="font-mono text-[11.5px] text-clay font-semibold text-right">{fmtUSD(-transfer.paymentsTotalFees)}</div>
+                  <div className={`font-mono text-[11.5px] font-semibold text-right ${transfer.paymentsTotalNet < 0 ? "text-clay" : "text-forest"}`}>{fmtUSD(transfer.paymentsTotalNet, { sign: true })}</div>
                 </div>
               </div>
 
