@@ -99,6 +99,43 @@ model DeletedDeposit {
   reason      String?
 }
 
+// One parsed line item from an uploaded bank statement PDF.
+// kind:
+//   "check"  — disbursement, no description, has checkNumber
+//   "debit"  — withdrawal (ACH, fee, etc.) with multi-line description
+//   "credit" — deposit (ACH, manual deposit, etc.) with description
+// amount is signed in dollars (negative for debits/checks, positive for credits).
+// accountNumber/fundId/tagId hold the user's chosen Aplos posting target.
+// "entered" / "deleted" are tracked via ManualMark / DeletedDeposit with source="bank".
+model BankEntry {
+  externalKey   String   @id
+  statementFile String
+  kind          String
+  date          String
+  amount        Float
+  description   String
+  checkNumber   Int?
+  accountNumber Int?
+  fundId        Int?
+  tagId         Int?
+  autoSkip      Boolean  @default(false)
+  parsedAt      DateTime @default(now())
+}
+
+// Per-statement summary box from the top of each bank statement PDF
+// ("Beginning balance / Total additions / Total subtractions / Ending balance").
+// Keyed by statementMonth ("May 2026") so a re-upload of the same statement
+// updates the same row.
+model BankStatement {
+  statementMonth    String   @id
+  statementFile     String
+  beginningBalance  Float
+  totalAdditions    Float
+  totalSubtractions Float
+  endingBalance     Float
+  uploadedAt        DateTime @default(now())
+}
+
 model PostingLog {
   id           Int      @id @default(autoincrement())
   source       String

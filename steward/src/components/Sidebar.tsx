@@ -7,6 +7,7 @@ import { useState } from "react";
 const NAV = [
   { href: "/imports", label: "Square imports", abbr: "Sq" },
   { href: "/subsplash", label: "Subsplash imports", abbr: "Su" },
+  { href: "/bank", label: "Bank reconciliation", abbr: "Bk" },
   { href: "/credit-card", label: "Credit card", abbr: "CC" },
   { href: "/rules", label: "Rules", abbr: "Ru" },
 ];
