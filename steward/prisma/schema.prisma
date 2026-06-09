@@ -136,6 +136,22 @@ model BankStatement {
   uploadedAt        DateTime @default(now())
 }
 
+// One Aplos posting line for a PowerChurch Journal-Report entry. An entry can
+// have many splits — the sum should equal the entry's total amount. The first
+// split is created with amount = entry total when the user first categorizes.
+// externalKey shape: "powerchurch:<fileName>|<reference>|<date>|<entryIndex>".
+model PowerChurchSplit {
+  externalKey   String
+  index         Int      // 0-based ordering, stable per row
+  amount        Float
+  accountNumber Int?
+  fundId        Int?
+  tagId         Int?
+  updatedAt     DateTime @updatedAt
+
+  @@id([externalKey, index])
+}
+
 model PostingLog {
   id           Int      @id @default(autoincrement())
   source       String

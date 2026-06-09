@@ -51,7 +51,6 @@ export function BankCard({
 
   const toggleEntered = async () => {
     const next = !manuallyEntered;
-    if (!next && !confirm("Unmark this entry as entered?")) return;
     onMarkChange(next);
     setSavingMark(true);
     try {
@@ -162,7 +161,7 @@ export function BankCard({
               onChange={(v) => saveField({ tagId: v || null })}
               options={tags.map((t) => ({
                 value: t.id,
-                label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+                label: t.name,
                 subLabel: String(t.id),
               }))}
               placeholder="— ministry —"

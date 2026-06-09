@@ -11,47 +11,8 @@
 // The statement also carries DAILY BALANCES at the end — we use the
 // "This statement: <Month D, YYYY>" line to figure out the year.
 
-import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { PDFParse } from "pdf-parse";
-
-// pdf-parse / pdfjs-dist normally bootstrap their worker by doing a dynamic
-// import() of GlobalWorkerOptions.workerSrc. Under Next 16 + Turbopack that
-// dynamic import is still intercepted even with serverExternalPackages set,
-// producing paths like "C:/.../steward/[project]/steward/node_modules/...".
-//
-// Escape hatch: pdfjs skips that dynamic import entirely when
-// globalThis.pdfjsWorker.WorkerMessageHandler is already populated (see
-// PDFWorker.#mainThreadWorkerMessageHandler in pdfjs-dist/legacy/build/pdf.mjs).
-// We load pdf.worker.mjs ourselves once, via a plain require() against an
-// absolute path so Turbopack doesn't touch it, and stash the handler.
-let workerConfigured = false;
-async function ensureWorker() {
-  if (workerConfigured) return;
-  const workerPath = path.join(
-    process.cwd(),
-    "node_modules",
-    "pdfjs-dist",
-    "legacy",
-    "build",
-    "pdf.worker.mjs",
-  );
-  const workerUrl = pathToFileURL(workerPath).href;
-  // Tell pdfjs about the workerSrc even though we'll preempt the import —
-  // some code paths still log/inspect the value.
-  PDFParse.setWorker(workerUrl);
-  // Hide the dynamic import behind `new Function` so Turbopack can't statically
-  // rewrite it. Comment pragmas like webpackIgnore / @vite-ignore are NOT
-  // respected by Turbopack, so we have to make the import truly opaque.
-  const dynamicImport = new Function("u", "return import(u);") as (u: string) => Promise<unknown>;
-  const mod = (await dynamicImport(workerUrl)) as { WorkerMessageHandler?: unknown };
-  // pdfjs reads globalThis.pdfjsWorker.WorkerMessageHandler before falling back
-  // to the dynamic worker import.
-  (globalThis as unknown as { pdfjsWorker?: { WorkerMessageHandler: unknown } }).pdfjsWorker = {
-    WorkerMessageHandler: mod.WorkerMessageHandler,
-  };
-  workerConfigured = true;
-}
+import { ensurePdfWorker } from "./pdf-worker";
 
 export type BankEntryKind = "check" | "debit" | "credit";
 
@@ -276,7 +237,7 @@ function parseTransactions(text: string, year: number): ParsedBankEntry[] {
 }
 
 export async function parseStatementBuffer(buffer: Buffer): Promise<ParsedStatement> {
-  await ensureWorker();
+  await ensurePdfWorker();
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   let text: string;
   try {

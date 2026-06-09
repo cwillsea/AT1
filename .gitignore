@@ -15,8 +15,13 @@ node_modules/
 square/deposits/
 square/aplos-imports/
 bank-statements/
+subsplash/transfers/
+subsplash/in-person/
+powerchurch/
 *.csv
 *.pdf
+*.xlsx
+*.xls
 
 # sqlite databases
 *.db

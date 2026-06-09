@@ -104,7 +104,6 @@ export function PayoutCard({
   const toggleManuallyPosted = async () => {
     if (hasUnmatched) return; // belt + suspenders; the input is also disabled
     const next = !manuallyPosted;
-    if (!next && !confirm("Unmark this deposit as posted?")) return;
     onMarkChange(next); // optimistic, parent updates
     setSavingMark(true);
     try {
@@ -470,7 +469,7 @@ function InlineRuleForm({
             allowEmpty={false}
             options={tags.map((t) => ({
               value: t.id,
-              label: `${t.name}${t.category ? ` (${t.category})` : ""}`,
+              label: t.name,
               subLabel: String(t.id),
             }))}
           />

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Teller Connect — At1</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; }
+    button { font-size: 16px; padding: 10px 20px; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 16px; border-radius: 8px; word-break: break-all; white-space: pre-wrap; }
+    .ok { color: #0a0; }
+    .err { color: #a00; }
+  </style>
+</head>
+<body>
+  <h1>Teller Connect</h1>
+  <p>Click below, log in to your bank, pick the account(s) you want to grant access to. When done, the access token appears below — copy it into <code>teller/.env</code> as <code>TELLER_ACCESS_TOKEN</code>.</p>
+  <button id="connect">Connect a bank</button>
+  <h2>Result</h2>
+  <pre id="result">(waiting...)</pre>
+
+  <script src="https://cdn.teller.io/connect/connect.js"></script>
+  <script>
+    const result = document.getElementById("result");
+
+    const teller = TellerConnect.setup({
+      applicationId: "app_psvul9gav87r7go454000",
+      environment: "development",
+      onInit: () => console.log("Teller Connect ready"),
+      onSuccess: (enrollment) => {
+        result.innerHTML =
+          '<span class="ok">Success!</span>\n\n' +
+          'access_token: ' + enrollment.accessToken + '\n\n' +
+          'enrollment.id: ' + enrollment.enrollment.id + '\n' +
+          'institution: ' + (enrollment.enrollment.institution?.name || "(unknown)") + '\n' +
+          'user.id: ' + enrollment.user.id + '\n\n' +
+          'Full payload:\n' + JSON.stringify(enrollment, null, 2);
+      },
+      onExit: () => {
+        if (result.textContent === "(waiting...)") {
+          result.innerHTML = '<span class="err">Exited without enrolling.</span>';
+        }
+      },
+      onFailure: (failure) => {
+        result.innerHTML = '<span class="err">Failed: </span>' + JSON.stringify(failure, null, 2);
+      },
+    });
+
+    document.getElementById("connect").addEventListener("click", () => teller.open());
+  </script>
+</body>
+</html>

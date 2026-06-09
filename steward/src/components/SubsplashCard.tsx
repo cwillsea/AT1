@@ -62,6 +62,37 @@ export function SubsplashCard({
   const totalNet = transfer.giftsTotalNet + transfer.paymentsTotalNet;
   const splitMatchesDeposit = Math.abs(totalNet - transfer.transferAmount) < 0.01;
 
+  // Merge gift rollup lines that resolve to the same Aplos purpose. Multiple
+  // raw CSV Fund values (e.g. "Tithe" + "General") can share a purpose — they
+  // collapse to one line, with source funds listed under the purpose.
+  type MergedGiftLine =
+    | { matched: false; fund: string; count: number; gross: number; fee: number; net: number }
+    | { matched: true; purpose: string; sourceFunds: string[]; count: number; gross: number; fee: number; net: number };
+  const mergedGiftRollup: MergedGiftLine[] = [];
+  const giftByPurpose = new Map<string, Extract<MergedGiftLine, { matched: true }>>();
+  for (const g of transfer.giftRollup) {
+    const purpose = giftFundToPurpose[g.fund];
+    if (!purpose) {
+      mergedGiftRollup.push({ matched: false, fund: g.fund, count: g.count, gross: g.gross, fee: g.fee, net: g.net });
+    } else {
+      const existing = giftByPurpose.get(purpose);
+      if (existing) {
+        existing.count += g.count;
+        existing.gross += g.gross;
+        existing.fee += g.fee;
+        existing.net += g.net;
+        if (!existing.sourceFunds.includes(g.fund)) existing.sourceFunds.push(g.fund);
+      } else {
+        const line: Extract<MergedGiftLine, { matched: true }> = {
+          matched: true, purpose, sourceFunds: [g.fund], count: g.count, gross: g.gross, fee: g.fee, net: g.net,
+        };
+        giftByPurpose.set(purpose, line);
+        mergedGiftRollup.push(line);
+      }
+    }
+  }
+  mergedGiftRollup.sort((a, b) => b.gross - a.gross);
+
   // Merge payment rollup lines that resolve to the same Aplos target.
   type MergedPaymentLine =
     | { matched: false; paymentSource: string; count: number; gross: number }
@@ -89,7 +120,6 @@ export function SubsplashCard({
 
   const toggleManuallyPosted = async () => {
     const next = !manuallyPosted;
-    if (!next && !confirm("Unmark this transfer as posted?")) return;
     onMarkChange(next);
     setSavingMark(true);
     try {
@@ -187,22 +217,23 @@ export function SubsplashCard({
                   <div className="text-right">Fee</div>
                   <div className="text-right">Net</div>
                 </div>
-                {transfer.giftRollup.map((g) => {
-                  const purpose = giftFundToPurpose[g.fund];
-                  return (
-                    <div key={g.fund} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
-                      <div>
-                        <div className="font-ui text-[12px] text-ink">{purpose ?? g.fund}</div>
-                        {purpose && <div className="font-ui text-[10px] text-ink3">{g.fund}</div>}
-                        {!purpose && <div className="font-ui text-[10px] text-honey font-semibold">No rule</div>}
-                      </div>
-                      <div className="font-mono text-[11px] text-ink2 text-right">{g.count}</div>
-                      <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(g.gross)}</div>
-                      <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-g.fee)}</div>
-                      <div className="font-mono text-[12px] text-forest font-semibold text-right">{fmtUSD(g.net, { sign: true })}</div>
+                {mergedGiftRollup.map((g, i) => (
+                  <div key={i} className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 border-b border-line2 items-center">
+                    <div>
+                      <div className="font-ui text-[12px] text-ink">{g.matched ? g.purpose : g.fund}</div>
+                      {g.matched && (
+                        <div className="font-ui text-[10px] text-ink3">{g.sourceFunds.join(", ")}</div>
+                      )}
+                      {!g.matched && (
+                        <div className="font-ui text-[10px] text-honey font-semibold">No rule</div>
+                      )}
                     </div>
-                  );
-                })}
+                    <div className="font-mono text-[11px] text-ink2 text-right">{g.count}</div>
+                    <div className="font-mono text-[11px] text-ink2 text-right">{fmtUSD(g.gross)}</div>
+                    <div className="font-mono text-[11px] text-clay text-right">{fmtUSD(-g.fee)}</div>
+                    <div className="font-mono text-[12px] text-forest font-semibold text-right">{fmtUSD(g.net, { sign: true })}</div>
+                  </div>
+                ))}
                 <div className="px-3.5 py-2 grid grid-cols-[1fr_2rem_5rem_4rem_5rem] gap-x-3 bg-line2 items-center">
                   <div className="font-ui text-[11.5px] text-ink2 font-semibold">Total</div>
                   <div className="font-mono text-[11px] text-ink2 text-right font-semibold">{transfer.giftCount}</div>

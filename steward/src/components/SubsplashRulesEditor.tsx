@@ -163,6 +163,11 @@ export function SubsplashRulesEditor({
   const giftPatterns = Array.from(new Set([...observedGiftFunds, ...giftRules.map((r) => r.pattern)])).sort();
   const paymentPatterns = Array.from(new Set([...observedPaymentSources, ...paymentRules.map((r) => r.pattern)])).sort();
 
+  // Count rows (patterns) that have at least one rule — avoids "7 of 6"
+  // when duplicate rules exist for the same pattern.
+  const giftMappedCount = giftPatterns.filter((p) => giftRules.some((r) => r.pattern === p)).length;
+  const paymentMappedCount = paymentPatterns.filter((p) => paymentRules.some((r) => r.pattern === p)).length;
+
   const purposeOptions: SearchableOption[] = purposes.map((p) => ({
     value: p.id,
     label: p.name,
@@ -194,7 +199,7 @@ export function SubsplashRulesEditor({
             <div className="font-display text-[18px] text-ink mt-0.5">Tithe, Kingdom Builders, etc.</div>
           </div>
           <div className="font-ui text-[11.5px] text-ink3">
-            {giftRules.length} of {giftPatterns.length} fund{giftPatterns.length === 1 ? "" : "s"} mapped
+            {giftMappedCount} of {giftPatterns.length} fund{giftPatterns.length === 1 ? "" : "s"} mapped
           </div>
         </div>
 
@@ -268,7 +273,7 @@ export function SubsplashRulesEditor({
             <div className="font-display text-[18px] text-ink mt-0.5">Academy Pizza Wednesday, Youth Camp, etc.</div>
           </div>
           <div className="font-ui text-[11.5px] text-ink3">
-            {paymentRules.length} of {paymentPatterns.length} source{paymentPatterns.length === 1 ? "" : "s"} mapped
+            {paymentMappedCount} of {paymentPatterns.length} source{paymentPatterns.length === 1 ? "" : "s"} mapped
           </div>
         </div>
 

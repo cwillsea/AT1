@@ -8,7 +8,9 @@ const NAV = [
   { href: "/imports", label: "Square imports", abbr: "Sq" },
   { href: "/subsplash", label: "Subsplash imports", abbr: "Su" },
   { href: "/bank", label: "Bank reconciliation", abbr: "Bk" },
+  { href: "/bank-activity", label: "Bank activity", abbr: "Ba" },
   { href: "/credit-card", label: "Credit card", abbr: "CC" },
+  { href: "/powerchurch", label: "PowerChurch imports", abbr: "PC" },
   { href: "/rules", label: "Rules", abbr: "Ru" },
 ];
 

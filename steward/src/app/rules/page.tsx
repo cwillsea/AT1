@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { RulesTabs } from "@/components/RulesTabs";
 import { loadAllTransfers } from "@/lib/subsplash-csv";
+import { loadAllBatches } from "@/lib/in-person-csv";
 
 export const dynamic = "force-dynamic";
 
@@ -33,21 +34,25 @@ export default async function RulesPage() {
   ]);
 
   // Discover Subsplash sources from CSV files (so the editor can flag missing rules).
-  let observedGiftFunds: string[] = [];
-  let observedPaymentSources: string[] = [];
+  // Pull from BOTH online transfers and in-person batches so funds like
+  // "NextGen Ministries" that only appear in in-person batches still show up.
+  const giftFunds = new Set<string>();
+  const paymentSources = new Set<string>();
   try {
     const { transfers } = loadAllTransfers();
-    const giftFunds = new Set<string>();
-    const paymentSources = new Set<string>();
     for (const t of transfers) {
       for (const g of t.gifts) if (g.fund) giftFunds.add(g.fund);
       for (const p of t.payments) if (p.paymentSource) paymentSources.add(p.paymentSource);
     }
-    observedGiftFunds = [...giftFunds].sort();
-    observedPaymentSources = [...paymentSources].sort();
-  } catch {
-    /* no transfers loaded — that's fine */
-  }
+  } catch { /* no online transfers — fine */ }
+  try {
+    const { batches } = loadAllBatches();
+    for (const b of batches) {
+      for (const g of b.gifts) if (g.fund) giftFunds.add(g.fund);
+    }
+  } catch { /* no in-person batches — fine */ }
+  const observedGiftFunds = [...giftFunds].sort();
+  const observedPaymentSources = [...paymentSources].sort();
 
   return (
     <>
