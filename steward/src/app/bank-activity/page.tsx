@@ -5,6 +5,7 @@ import {
   type TellerTransaction,
 } from "@/lib/teller";
 import { fmtUSD, fmtShortDate } from "@/lib/fmt";
+import { MonthFilter } from "@/components/MonthFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,38 @@ export const dynamic = "force-dynamic";
 // When we generalize, list /accounts and let the user pick.
 const ACCOUNT_ID = "acc_ptamlmdg3u6it8ejig000";
 
-export default async function BankActivityPage() {
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function parseMonth(raw: string | undefined) {
+  const now = new Date();
+  const fallback = { year: now.getFullYear(), month: now.getMonth() }; // month is 0-indexed
+  if (!raw) return fallback;
+  const m = raw.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return fallback;
+  const year = Number(m[1]);
+  const monthIdx = Number(m[2]) - 1;
+  if (monthIdx < 0 || monthIdx > 11) return fallback;
+  return { year, month: monthIdx };
+}
+
+export default async function BankActivityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
+  const { month: monthParam } = await searchParams;
+  const { year, month } = parseMonth(monthParam);
+  const selectedValue = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthLabel = `${MONTH_NAMES[month]} ${year}`;
+
+  // Compute YYYY-MM-DD start (first day) and end (last day) of the chosen month.
+  const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const endDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
   let account: TellerAccount | null = null;
   let balances: TellerBalances | null = null;
   let transactions: TellerTransaction[] = [];
@@ -22,7 +54,9 @@ export default async function BankActivityPage() {
     const [acctRes, balRes, txnRes] = await Promise.all([
       tellerGet<TellerAccount>(`/accounts/${ACCOUNT_ID}`),
       tellerGet<TellerBalances>(`/accounts/${ACCOUNT_ID}/balances`),
-      tellerGet<TellerTransaction[]>(`/accounts/${ACCOUNT_ID}/transactions`),
+      tellerGet<TellerTransaction[]>(
+        `/accounts/${ACCOUNT_ID}/transactions?start_date=${startDate}&end_date=${endDate}`
+      ),
     ]);
     if (acctRes.status !== 200) throw new Error(`account: HTTP ${acctRes.status}`);
     if (balRes.status !== 200)  throw new Error(`balances: HTTP ${balRes.status}`);
@@ -34,9 +68,7 @@ export default async function BankActivityPage() {
     error = e instanceof Error ? e.message : String(e);
   }
 
-  // Sort newest → oldest. Teller usually returns this order but enforce it.
   const sorted = [...transactions].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-
   const ledger = balances ? Number(balances.ledger) : null;
   const available = balances ? Number(balances.available) : null;
 
@@ -61,6 +93,8 @@ export default async function BankActivityPage() {
           </div>
         </div>
         <div className="flex gap-4 items-center">
+          <MonthFilter selected={selectedValue} />
+          <div className="w-px h-8 bg-line" />
           <div className="text-right">
             <div className="font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">Ledger</div>
             <div className="font-display text-[22px] text-ink mt-0.5 font-medium tabular-nums">
@@ -85,7 +119,7 @@ export default async function BankActivityPage() {
         )}
 
         <div className="font-ui text-[11px] text-ink3 tracking-[0.08em] uppercase mb-2">
-          Transactions · {sorted.length}
+          {monthLabel} · {sorted.length} transactions
         </div>
 
         <div className="border border-line rounded-xl overflow-hidden">
@@ -104,7 +138,7 @@ export default async function BankActivityPage() {
               {sorted.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-6 text-center text-ink3 font-ui text-[12px]">
-                    No transactions returned.
+                    No transactions in {monthLabel}.
                   </td>
                 </tr>
               )}
