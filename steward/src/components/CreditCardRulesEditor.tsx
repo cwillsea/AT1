@@ -174,8 +174,6 @@ function MinistrySection({ initial, funds, tags }: { initial: Rule[]; funds: Fun
   const tagOpts: SearchableOption[] = tags.map((t) => ({ value: t.id, label: t.name }));
 
   const sorted = [...rules].sort((a, b) => b.priority - a.priority || a.id - b.id);
-  const fundLabel = (id: number) => funds.find((f) => f.id === id)?.name ?? `Fund ${id}`;
-  const tagLabel = (id: number) => tags.find((t) => t.id === id)?.name ?? `Tag ${id}`;
 
   const add = async () => {
     if (!draft) return;
@@ -199,10 +197,17 @@ function MinistrySection({ initial, funds, tags }: { initial: Rule[]; funds: Fun
     try { await deleteRule(id); setRules((r) => r.filter((x) => x.id !== id)); router.refresh(); }
     catch (e) { alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`); }
   };
+  const edit = async (id: number, body: Record<string, unknown>) => {
+    try {
+      const updated = await patchRule(id, body);
+      setRules((r) => r.map((x) => (x.id === id ? updated : x)));
+      router.refresh();
+    } catch (e) { alert(`Save failed: ${e instanceof Error ? e.message : String(e)}`); }
+  };
 
   return (
     <section className="flex flex-col gap-2">
-      <SectionHeader title="Ministry rules" sub="Substring match on the Ministry column → Aplos fund + tag." count={rules.length} />
+      <SectionHeader title="Ministry rules" sub="Substring match on the Ministry column → Aplos fund + tag. Click any field to edit; changes save when you leave the field." count={rules.length} />
       <table className="w-full font-ui text-[12px]">
         <thead className="text-ink3">
           <tr><th className="text-left py-1 w-20">Priority</th><th className="text-left py-1">Pattern (contains)</th><th className="text-left py-1">Fund</th><th className="text-left py-1">Tag</th><th className="text-left py-1">Label</th><th className="w-12"></th></tr>
@@ -210,11 +215,11 @@ function MinistrySection({ initial, funds, tags }: { initial: Rule[]; funds: Fun
         <tbody>
           {sorted.map((r) => (
             <tr key={r.id} className="border-t border-line">
-              <td className="py-1">{r.priority}</td>
-              <td className="py-1 font-mono">{r.pattern}</td>
-              <td className="py-1">{r.fundId != null ? fundLabel(r.fundId) : "—"}</td>
-              <td className="py-1">{r.tagId != null ? tagLabel(r.tagId) : "—"}</td>
-              <td className="py-1 text-ink2">{r.label}</td>
+              <td className="py-1"><input className={input + " w-14"} type="number" defaultValue={r.priority} onBlur={(e) => e.target.value !== String(r.priority) && edit(r.id, { priority: Number(e.target.value) })} /></td>
+              <td className="py-1 pr-2"><input className={input + " w-full font-mono"} defaultValue={r.pattern} onBlur={(e) => e.target.value !== r.pattern && edit(r.id, { pattern: e.target.value })} /></td>
+              <td className="py-1 pr-2 w-44"><SearchableSelect options={fundOpts} value={r.fundId ?? 0} onChange={(v) => v && v !== r.fundId && edit(r.id, { fundId: v })} placeholder="Fund…" allowEmpty={false} /></td>
+              <td className="py-1 pr-2 w-52"><SearchableSelect options={tagOpts} value={r.tagId ?? 0} onChange={(v) => v && v !== r.tagId && edit(r.id, { tagId: v })} placeholder="Tag…" allowEmpty={false} /></td>
+              <td className="py-1"><input className={input + " w-full"} defaultValue={r.label ?? ""} onBlur={(e) => e.target.value !== (r.label ?? "") && edit(r.id, { label: e.target.value || null })} /></td>
               <td className="py-1 text-right"><button className="text-clay cursor-pointer" onClick={() => remove(r.id)}>×</button></td>
             </tr>
           ))}
