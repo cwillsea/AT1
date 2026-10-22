@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { PowerChurchCard, type AccountOpt, type FundOpt, type TagOpt, type Split } from "./PowerChurchCard";
 import { fmtUSD } from "@/lib/fmt";
 import type { PCEntry } from "@/lib/powerchurch-csv";
@@ -50,7 +50,24 @@ export function PowerChurchList({
       return out;
     });
   };
+  const setMarkMany = useCallback((keys: string[], next: boolean) => {
+    setMarked((prev) => {
+      const out = new Set(prev);
+      for (const k of keys) {
+        if (next) out.add(k);
+        else out.delete(k);
+      }
+      return out;
+    });
+  }, []);
   const markDeleted = (key: string) => setDeleted((prev) => new Set(prev).add(key));
+  const markManyDeleted = useCallback((keys: string[]) => {
+    setDeleted((prev) => {
+      const out = new Set(prev);
+      for (const k of keys) out.add(k);
+      return out;
+    });
+  }, []);
   const setSplitsFor = (key: string, next: Split[]) => {
     setSplits((prev) => ({ ...prev, [key]: next }));
   };
@@ -87,7 +104,9 @@ export function PowerChurchList({
           items={g.items}
           marked={marked}
           setMark={setMark}
+          setMarkMany={setMarkMany}
           markDeleted={markDeleted}
+          markManyDeleted={markManyDeleted}
           splits={splits}
           setSplitsFor={setSplitsFor}
           accounts={accounts}
@@ -107,7 +126,9 @@ function MonthShelf({
   items,
   marked,
   setMark,
+  setMarkMany,
   markDeleted,
+  markManyDeleted,
   splits,
   setSplitsFor,
   accounts,
@@ -121,7 +142,9 @@ function MonthShelf({
   items: PCEntry[];
   marked: Set<string>;
   setMark: (key: string, next: boolean) => void;
+  setMarkMany: (keys: string[], next: boolean) => void;
   markDeleted: (key: string) => void;
+  markManyDeleted: (keys: string[]) => void;
   splits: Record<string, Split[]>;
   setSplitsFor: (key: string, next: Split[]) => void;
   accounts: AccountOpt[];
@@ -132,43 +155,144 @@ function MonthShelf({
   externalKey: (e: PCEntry) => string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [deletingMonth, setDeletingMonth] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
+
+  const deleteMonth = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Delete all ${items.length} entr${items.length === 1 ? "y" : "ies"} in ${month}? They'll disappear from this view so you can re-upload the month.`)) return;
+    setDeletingMonth(true);
+    const keys = items.map(externalKey);
+    try {
+      const results = await Promise.all(
+        keys.map((key) =>
+          fetch("/api/delete-deposit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ externalKey: key, source: "powerchurch", deleted: true }),
+          }).then((res) => res.ok)
+        )
+      );
+      if (results.some((ok) => !ok)) throw new Error("One or more entries failed to delete");
+      markManyDeleted(keys);
+    } catch (err) {
+      alert(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeletingMonth(false);
+    }
+  };
 
   const sorted = [...items].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const pending = sorted.filter((e) => !marked.has(externalKey(e)));
   const pendingNet = pending.reduce((s, e) => s + (e.isVoid ? e.amount : -e.amount), 0);
   const totalNet = sorted.reduce((s, e) => s + (e.isVoid ? e.amount : -e.amount), 0);
 
+  // Mirrors the export route's eligibility test: unmarked (deleted entries are
+  // already filtered upstream), has splits, and every split fully categorized.
+  const readyCount = pending.filter((e) => {
+    const s = splits[externalKey(e)];
+    return !!s && s.length > 0 && s.every((x) => x.accountNumber != null && x.fundId != null && x.tagId != null);
+  }).length;
+
+  const exportHref = `/api/powerchurch/export?month=${encodeURIComponent(month)}`;
+
+  // Bulk version of the per-card "manually entered" checkbox. Optimistic with
+  // rollback, same as the card — only the entries that were pending get
+  // flipped, so a failure can't clobber ones already marked.
+  const markAllEntered = async (ev: React.MouseEvent) => {
+    ev.stopPropagation();
+    const keys = pending.map(externalKey);
+    if (keys.length === 0) return;
+    if (!confirm(`Mark all ${keys.length} pending entr${keys.length === 1 ? "y" : "ies"} in ${month} as manually entered? They'll drop out of the Aplos import.`)) return;
+
+    setMarkingAll(true);
+    setMarkMany(keys, true);
+    try {
+      const results = await Promise.all(
+        keys.map((key) =>
+          fetch("/api/manual-mark", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ externalKey: key, source: "powerchurch", marked: true }),
+          }).then((res) => res.ok)
+        )
+      );
+      if (results.some((ok) => !ok)) throw new Error("One or more entries failed to save");
+    } catch (err) {
+      setMarkMany(keys, false);
+      alert(`Mark all failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMarkingAll(false);
+    }
+  };
+
   return (
     <div className="border border-line rounded-xl bg-panel/50">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-[18px] py-3.5 cursor-pointer hover:bg-line2/40 rounded-xl"
-      >
-        <div className="flex items-center gap-3">
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}
-            className="text-ink2"
-          >
-            <path d="M 3 2 L 8 6 L 3 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="font-display text-[18px] text-ink font-medium tracking-tight">{month}</span>
-          <span className="font-ui text-[11px] text-ink3">
-            {items.length} entries · {pending.length} pending
-          </span>
-        </div>
-        <div className="text-right">
-          <div className="font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">pending net</div>
-          <div className={`font-display text-[16px] font-medium ${pendingNet >= 0 ? "text-forest" : "text-clay"}`}>
-            {fmtUSD(pendingNet, { sign: true })}
+      <div className="w-full flex items-center gap-2 pr-[18px]">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 flex items-center justify-between px-[18px] py-3.5 cursor-pointer hover:bg-line2/40 rounded-xl"
+        >
+          <div className="flex items-center gap-3">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}
+              className="text-ink2"
+            >
+              <path d="M 3 2 L 8 6 L 3 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="font-display text-[18px] text-ink font-medium tracking-tight">{month}</span>
+            <span className="font-ui text-[11px] text-ink3">
+              {items.length} entries · {pending.length} pending
+            </span>
           </div>
-          <div className="font-ui text-[10px] text-ink3 mt-0.5">
-            (all: {fmtUSD(totalNet, { sign: true })})
+          <div className="text-right">
+            <div className="font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">pending net</div>
+            <div className={`font-display text-[16px] font-medium ${pendingNet >= 0 ? "text-forest" : "text-clay"}`}>
+              {fmtUSD(pendingNet, { sign: true })}
+            </div>
+            <div className="font-ui text-[10px] text-ink3 mt-0.5">
+              (all: {fmtUSD(totalNet, { sign: true })})
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+        <button
+          onClick={markAllEntered}
+          disabled={markingAll || pending.length === 0}
+          title={
+            pending.length === 0
+              ? `Every entry in ${month} is already marked entered`
+              : `Mark all ${pending.length} pending entries in ${month} as manually entered`
+          }
+          className="shrink-0 px-3 py-2 rounded-full border border-line text-ink2 font-ui text-[12px] cursor-pointer hover:bg-line2 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {markingAll ? "Marking…" : `Mark all entered${pending.length > 0 ? ` (${pending.length})` : ""}`}
+        </button>
+        <a
+          href={exportHref}
+          onClick={(e) => e.stopPropagation()}
+          title={
+            readyCount === 0
+              ? `No fully categorized entries in ${month} yet — the file will only contain a header row`
+              : `Export the ${readyCount} ready entr${readyCount === 1 ? "y" : "ies"} in ${month}`
+          }
+          className={`shrink-0 px-3 py-2 rounded-full font-ui text-[12px] font-semibold cursor-pointer ${
+            readyCount === 0 ? "bg-line2 text-ink3 hover:bg-line2/70" : "bg-forest text-bg"
+          }`}
+        >
+          Generate Aplos import{readyCount > 0 ? ` (${readyCount})` : ""}
+        </a>
+        <button
+          onClick={deleteMonth}
+          disabled={deletingMonth}
+          title={`Delete all entries in ${month} so you can re-upload it`}
+          className="shrink-0 px-2.5 py-2 rounded-full border border-clay/30 text-clay font-ui text-[12px] cursor-pointer hover:bg-clay-soft disabled:opacity-50"
+        >
+          {deletingMonth ? "Deleting…" : "Delete month"}
+        </button>
+      </div>
 
       {open && (
         <div className="px-[18px] pb-4 pt-1 flex flex-col gap-2.5">

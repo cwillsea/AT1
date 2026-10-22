@@ -59,10 +59,10 @@ export function PowerChurchUploader() {
         </div>
         <div>
           <div className="font-ui text-[13px] text-ink font-semibold">
-            {uploading ? "Uploading…" : "Drop a PowerChurch Journal Report (CSV or PDF)"}
+            {uploading ? "Uploading…" : "Drop a PowerChurch Journal Report (CSV, PDF, or XLSX)"}
           </div>
           <div className="font-ui text-[11.5px] text-ink3 mt-0.5">
-            From PowerChurch: <strong>Reports → Journal Report → Export CSV / PDF</strong>.
+            From PowerChurch: <strong>Reports → Journal Report → Export CSV / PDF / XLSX</strong>.
             Each AP check, ACH, and payroll Direct Deposit becomes one card.
           </div>
         </div>
@@ -72,7 +72,7 @@ export function PowerChurchUploader() {
           ref={inputRef}
           type="file"
           multiple
-          accept=".csv,.pdf"
+          accept=".csv,.pdf,.xlsx,.xls"
           className="hidden"
           onChange={(e) => { if (e.target.files && e.target.files.length > 0) upload(e.target.files); }}
         />

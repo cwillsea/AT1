@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { RulesEditor } from "./RulesEditor";
 import { SubsplashRulesEditor } from "./SubsplashRulesEditor";
+import { CreditCardRulesEditor } from "./CreditCardRulesEditor";
 
 type Rule = {
   id: number;
@@ -26,6 +27,9 @@ export function RulesTabs({
   squareRules,
   subsplashGiftRules,
   subsplashPaymentRules,
+  creditCardExpenseRules,
+  creditCardMinistryRules,
+  creditCardMerchantRules,
   accounts,
   funds,
   tags,
@@ -36,6 +40,9 @@ export function RulesTabs({
   squareRules: Rule[];
   subsplashGiftRules: Rule[];
   subsplashPaymentRules: Rule[];
+  creditCardExpenseRules: Rule[];
+  creditCardMinistryRules: Rule[];
+  creditCardMerchantRules: Rule[];
   accounts: AccountOpt[];
   funds: FundOpt[];
   tags: TagOpt[];
@@ -43,7 +50,7 @@ export function RulesTabs({
   observedGiftFunds: string[];
   observedPaymentSources: string[];
 }) {
-  const [tab, setTab] = useState<"square" | "subsplash">("square");
+  const [tab, setTab] = useState<"square" | "subsplash" | "credit-card">("square");
 
   const tabClass = (active: boolean) =>
     `px-4 py-2 font-ui text-[12.5px] font-semibold border-b-2 cursor-pointer transition-colors ${
@@ -68,6 +75,9 @@ export function RulesTabs({
           {subsplashTotalMissing > 0 && (
             <span className="ml-1.5 text-honey">● {subsplashTotalMissing}</span>
           )}
+        </button>
+        <button onClick={() => setTab("credit-card")} className={tabClass(tab === "credit-card")}>
+          Credit Card
         </button>
       </div>
 
@@ -95,6 +105,17 @@ export function RulesTabs({
           purposes={purposes}
           observedGiftFunds={observedGiftFunds}
           observedPaymentSources={observedPaymentSources}
+        />
+      )}
+
+      {tab === "credit-card" && (
+        <CreditCardRulesEditor
+          expenseRules={creditCardExpenseRules}
+          ministryRules={creditCardMinistryRules}
+          merchantRules={creditCardMerchantRules}
+          accounts={accounts}
+          funds={funds}
+          tags={tags}
         />
       )}
     </>

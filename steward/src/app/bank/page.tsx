@@ -83,6 +83,32 @@ export default async function BankPage() {
           </div>
         </div>
 
+        {/* Monthly reconciliation checklist — static reminder for the treasurer */}
+        <div className="border border-honey/30 bg-honey-soft rounded-xl px-[18px] py-3.5">
+          <div className="font-ui text-[10.5px] text-honey tracking-[0.08em] uppercase font-semibold">
+            Do every month
+          </div>
+          <ul className="mt-2 space-y-1.5 font-ui text-[12.5px] text-ink2">
+            <li className="flex gap-2">
+              <span className="text-ink3">1.</span>
+              <span>
+                <strong className="text-ink font-semibold">District tithe</strong> — Contribution Income for
+                General Tithes &amp; Offerings <span className="font-mono text-[11.5px] tabular-nums">× 2%</span>
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-ink3">2.</span>
+              <span>
+                <strong className="text-ink font-semibold">Transfer to missions</strong> — Contribution Income for
+                General Tithes &amp; Offerings <span className="font-mono text-[11.5px] tabular-nums">× 10%</span>
+              </span>
+            </li>
+          </ul>
+          <div className="mt-2.5 font-ui text-[11px] text-ink3">
+            Holy Grounds is already handled by adjusting the annual budget — nothing to do here.
+          </div>
+        </div>
+
         <BankUploader />
 
         <BankEntryList

@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import * as XLSX from "xlsx";
 import { pdfBufferToText } from "./pdf-worker";
 
 // One row from the "split" table under each Journal-Report entry header.
@@ -146,6 +147,22 @@ function parsePowerChurchCsv(text: string, fileName: string): PCEntry[] {
   return entries;
 }
 
+// Parse a PowerChurch Journal Report exported as XLSX. PowerChurch's spreadsheet
+// export uses the same column layout as its CSV export, so we convert each sheet
+// to CSV text and hand it to the CSV parser rather than duplicating the row logic.
+// `dateNF` forces date cells to the M/D/YYYY string the entry-header regex expects.
+function parsePowerChurchXlsx(buffer: Buffer, fileName: string): PCEntry[] {
+  const wb = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const entries: PCEntry[] = [];
+  for (const sheetName of wb.SheetNames) {
+    const sheet = wb.Sheets[sheetName];
+    if (!sheet) continue;
+    const csv = XLSX.utils.sheet_to_csv(sheet, { dateNF: "m/d/yyyy" });
+    entries.push(...parsePowerChurchCsv(csv, fileName));
+  }
+  return entries;
+}
+
 // Classify a split amount as debit vs credit when the source doesn't tell us
 // (i.e. plain-text PDF extraction). Uses the church's chart-of-accounts ranges:
 //   1xxx + 2xxx → assets/liabilities → credit on payout
@@ -283,6 +300,13 @@ export async function loadAllPowerChurchEntries(): Promise<{ sourcePaths: string
     if (lower.endsWith(".csv")) {
       sourcePaths.push(p);
       all.push(...parsePowerChurchCsv(readFileSync(p, "utf8"), f));
+    } else if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+      sourcePaths.push(p);
+      try {
+        all.push(...parsePowerChurchXlsx(readFileSync(p), f));
+      } catch {
+        // Skip files that fail to parse — bad uploads, wrong sheet, etc.
+      }
     } else if (lower.endsWith(".pdf")) {
       sourcePaths.push(p);
       try {

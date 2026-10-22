@@ -17,21 +17,17 @@ type CreateBody = {
   pattern: string;
   matchType?: string;
   priority?: number;
-  accountNumber: number;
-  fundId: number;
-  tagId: number;
+  accountNumber?: number | null;
+  fundId?: number | null;
+  tagId?: number | null;
+  purposeId?: number | null;
   label?: string | null;
 };
 
 export async function POST(request: Request) {
   const data = (await request.json()) as CreateBody;
-  if (
-    typeof data.pattern !== "string" ||
-    typeof data.accountNumber !== "number" ||
-    typeof data.fundId !== "number" ||
-    typeof data.tagId !== "number"
-  ) {
-    return Response.json({ error: "pattern, accountNumber, fundId, tagId required" }, { status: 400 });
+  if (typeof data.pattern !== "string") {
+    return Response.json({ error: "pattern is required" }, { status: 400 });
   }
   const rule = await prisma.categorizationRule.create({
     data: {
@@ -39,9 +35,10 @@ export async function POST(request: Request) {
       matchType: data.matchType ?? "contains",
       pattern: data.pattern,
       priority: data.priority ?? 0,
-      accountNumber: data.accountNumber,
-      fundId: data.fundId,
-      tagId: data.tagId,
+      accountNumber: data.accountNumber ?? null,
+      fundId: data.fundId ?? null,
+      tagId: data.tagId ?? null,
+      purposeId: data.purposeId ?? null,
       label: data.label ?? null,
     },
   });

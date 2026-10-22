@@ -138,10 +138,15 @@ function parseChecks(text: string, year: number): ParsedBankEntry[] {
 // continuation lines) and zip them onto rows in order, skipping rows whose
 // label is "Deposit" / "Deposit Return Item" (those have no second-column
 // detail in the source PDF).
-function parseTransactions(text: string, year: number): ParsedBankEntry[] {
+function parseTransactions(text: string, year: number, warnings: string[]): ParsedBankEntry[] {
   const startIdx = text.search(/\bDEBITS\b/);
   if (startIdx < 0) return [];
-  const endIdx = text.search(/Thank you for banking/);
+  // The statement text ends with "Thank you for banking with …"; everything
+  // after it is check/deposit-slip images (pages 5+) that must not be parsed.
+  // pdf-parse separates the words with tabs, so match on \s+ not literal
+  // spaces — a literal-space regex returns -1 and lets those pages leak in as
+  // phantom description blocks.
+  const endIdx = text.search(/Thank\s+you\s+for\s+banking/i);
   const body = text.slice(startIdx, endIdx > 0 ? endIdx : text.length);
 
   type RawRow = { start: number; end: number; kind: BankEntryKind; date: string; amount: number; label: string };
@@ -174,6 +179,36 @@ function parseTransactions(text: string, year: number): ParsedBankEntry[] {
     });
   }
 
+  // "Statement chrome": text the bank prints on every statement that is NOT
+  // transaction detail — the once-per-statement header/summary/remittance
+  // boilerplate and the running per-page header. pdf-parse interleaves this
+  // into the same text stream as the description column, so if we let any of
+  // it through it becomes a phantom description block and shifts EVERY later
+  // description onto the wrong row (this is the bug that put "ARIZONA WATER CO"
+  // on the SUBSPLASH deposit). These patterns must stay month/year-agnostic —
+  // the previous `^May \d` filter silently broke on the June statement.
+  const isStatementChrome = (line: string): boolean =>
+    /^XXXXXX\d+$/.test(line) ||                                // masked acct on its own (page-1 header)
+    /^[A-Za-z]+ \d{1,2}, \d{4}\b/.test(line) ||                // running header date line "June 30, 2026 XXXXXX1064" — any month. NB: does NOT match a legit "REF … XXXXXX1064" description
+    /^FREEDOM FAMILY CHURCH/i.test(line) ||                    // running header name line
+    /^DBA/i.test(line) ||                                      // "DBA AFTER THE ONE CHURCH"
+    /^PO\s+BOX\b/i.test(line) ||                               // church + bank PO boxes
+    /^ARIZONA CITY AZ/i.test(line) ||                          // church address
+    /^St\s+Louis\b/i.test(line) ||                             // bank address
+    /^Enterprise Bank/i.test(line) ||                          // bank name
+    /^Direct inquiries/i.test(line) ||                         // summary box
+    /^(Last|This) statement:/i.test(line) ||                   // summary box
+    /^Total days in statement period/i.test(line) ||           // summary box
+    /^Community\s+Checking/i.test(line) ||                     // product name line
+    /^IF\s+YOU\s+HAVE\s+QUESTIONS/i.test(line) ||              // remittance boilerplate
+    /^CUSTOMER\s+SERVICE\s+CENTER/i.test(line) ||              // remittance boilerplate
+    /^ENTERPRISE\s+TO\s+SERVE/i.test(line) ||                  // remittance boilerplate
+    /^Page \d+/i.test(line) ||
+    /^(CHECKS|DEBITS|CREDITS)\b/.test(line) ||
+    /^DAILY\s+BALANCES?\b/i.test(line) ||
+    (/^Date\b/i.test(line) && /\b(Amount|Description|Subtractions|Additions)\b/i.test(line)) ||
+    /^-+\s*\d+\s+of\s+\d+\s*-+$/i.test(line);                  // pdf-parse "-- 2 of 9 --" page marker
+
   // Collect description lines from the gaps between matched rows (this picks
   // up the description column block that follows each page's rows).
   const descLines: string[] = [];
@@ -182,17 +217,9 @@ function parseTransactions(text: string, year: number): ParsedBankEntry[] {
     const before = i + 1 < rows.length ? rows[i + 1].start : body.length;
     const gap = body.slice(after, before);
     for (const raw of gap.split(/\r?\n/)) {
-      const line = raw.trim();
+      const line = raw.replace(/\s+/g, " ").trim();
       if (!line) continue;
-      if (/^FREEDOM FAMILY CHURCH/i.test(line)) continue;
-      if (/^May \d{1,2}, \d{4}/.test(line)) continue;
-      if (/^XXXXXX\d+/.test(line)) continue;
-      if (/^Page \d+/i.test(line)) continue;
-      if (/^(CHECKS|DEBITS|CREDITS)\b/.test(line)) continue;
-      if (/^DAILY\s+BALANCES?\b/i.test(line)) continue;
-      if (/^Date\b/i.test(line) && /\b(Amount|Description|Subtractions|Additions)\b/i.test(line)) continue;
-      // pdf-parse emits page-break markers like "-- 2 of 9 --" between pages.
-      if (/^-+\s*\d+\s+of\s+\d+\s*-+$/i.test(line)) continue;
+      if (isStatementChrome(line)) continue;
       // Daily-balance values that leak into the description gap have no alpha.
       if (!/[a-zA-Z]/.test(line)) continue;
       descLines.push(line);
@@ -201,14 +228,18 @@ function parseTransactions(text: string, year: number): ParsedBankEntry[] {
 
   // Continuation lines: reference codes / addresses that belong to the
   // previous primary description (e.g. "202739301460", "6semk8m0kdk",
-  // "X5T9H4F3G1P3", "FROM FUNDS TRANSFER VIA ONLINE").
+  // "X5T9H4F3G1P3", "ST-J0H7W6G2S1T5", "FROM FUNDS TRANSFER VIA ONLINE").
+  // Primary descriptions always contain spaces (a payee name); a no-space
+  // token is a code that belongs to the row above it. Getting this wrong
+  // leaves the code as a phantom block and shifts every later description by
+  // one — which is exactly what mislabeled the June credits before this fix.
   const isContinuation = (line: string): boolean => {
     if (line.length < 6) return false;
     if (/\s/.test(line)) return /^(FROM|VIA|TO)\s/i.test(line);
-    if (/^\d+$/.test(line)) return true;
-    if (/^[a-z0-9]+$/.test(line)) return true;
-    if (/^\d[\dA-Z]+$/.test(line)) return true;
-    if (/^[A-Z][\dA-Z]*\d[\dA-Z]*$/.test(line) && line.length >= 8) return true;
+    if (/^\d+$/.test(line)) return true;                       // "202739301460"
+    if (/^[a-z0-9]+$/.test(line)) return true;                 // "6semk8m0kdk"
+    // UPPER/digit/hyphen confirmation codes: "X5T9H4F3G1P3", "ST-J0H7W6G2S1T5".
+    if (/^[A-Z0-9][A-Z0-9-]*$/.test(line) && /\d/.test(line)) return true;
     return false;
   };
   const blocks: string[] = [];
@@ -224,14 +255,28 @@ function parseTransactions(text: string, year: number): ParsedBankEntry[] {
   // have no detail column in the source, so they do not consume a block.
   const entries: ParsedBankEntry[] = [];
   let bi = 0;
+  let rowsNeedingBlock = 0;
   for (const row of rows) {
     const labelOnly = /^Deposit$/i.test(row.label) || /^Deposit Return Item$/i.test(row.label);
-    let description = row.label;
+    if (!labelOnly) rowsNeedingBlock++;
+    let description = row.label.replace(/\s+/g, " ").replace(/^['\s]+/, "").trim();
     if (!labelOnly && bi < blocks.length) {
-      description = `${row.label} — ${blocks[bi]}`;
+      description = `${description} — ${blocks[bi]}`;
       bi++;
     }
     entries.push({ kind: row.kind, date: row.date, amount: row.amount, description });
+  }
+
+  // Alignment guard: descriptions are zipped onto rows positionally, so the
+  // number of description blocks must equal the number of rows that expect one.
+  // A mismatch means unfiltered statement chrome (or a new row shape) has
+  // shifted the zip — the exact failure that mislabeled the water rows. Surface
+  // it loudly instead of shipping silently-wrong descriptions.
+  if (blocks.length !== rowsNeedingBlock) {
+    warnings.push(
+      `Bank statement description alignment is off: ${rowsNeedingBlock} transactions expected a detail line but ${blocks.length} were parsed. ` +
+      `Transaction descriptions may be attached to the wrong rows — verify against the PDF before trusting them.`
+    );
   }
   return entries;
 }
@@ -251,7 +296,7 @@ export async function parseStatementBuffer(buffer: Buffer): Promise<ParsedStatem
   const warnings: string[] = [];
 
   const checks = parseChecks(text, year);
-  const txns = parseTransactions(text, year);
+  const txns = parseTransactions(text, year, warnings);
   const debits = txns.filter((e) => e.kind === "debit");
   const credits = txns.filter((e) => e.kind === "credit");
 

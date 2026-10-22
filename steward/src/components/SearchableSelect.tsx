@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type SearchableOption = {
   value: number;
@@ -36,8 +37,50 @@ export function SearchableSelect({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  // Viewport coords for the portalled panel. Null until measured.
+  const [pos, setPos] = useState<{ left: number; width: number; maxH: number; top?: number; bottom?: number } | null>(null);
 
   const selected = options.find((o) => o.value === value);
+
+  // The panel renders in a portal on document.body so no ancestor's
+  // overflow-hidden (the rules table's rounded card, <main>'s scroll box) can
+  // clip it. That means we position it by hand in viewport coords, and flip it
+  // above the trigger when the space below is too tight.
+  const measure = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const GAP = 4;
+    const MARGIN = 12;
+    const DESIRED = 320;
+    const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
+    const spaceAbove = r.top - GAP - MARGIN;
+    const dropDown = spaceBelow >= Math.min(DESIRED, spaceAbove) || spaceBelow >= 220;
+    const maxH = Math.max(160, Math.min(DESIRED, dropDown ? spaceBelow : spaceAbove));
+    const width = Math.max(r.width, 260);
+    const left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - MARGIN - width));
+    // Opening upward anchors the panel's *bottom* edge to the trigger. Anchoring
+    // its top would assume the panel is exactly maxH tall, so a short list would
+    // float far above the field it belongs to.
+    setPos({
+      left,
+      width,
+      maxH,
+      ...(dropDown ? { top: r.bottom + GAP } : { bottom: window.innerHeight - r.top + GAP }),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) { setPos(null); return; }
+    measure();
+    // Capture phase so scrolling any ancestor container repositions us too.
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
+  }, [open, measure]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -61,9 +104,9 @@ export function SearchableSelect({
   useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || dropdownRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -72,15 +115,7 @@ export function SearchableSelect({
   // Focus the search input when opening.
   useEffect(() => {
     if (open) {
-      requestAnimationFrame(() => {
-        inputRef.current?.focus({ preventScroll: true });
-        if (dropdownRef.current) {
-          const rect = dropdownRef.current.getBoundingClientRect();
-          if (rect.bottom > window.innerHeight) {
-            dropdownRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
-          }
-        }
-      });
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     } else {
       setQuery("");
     }
@@ -123,8 +158,12 @@ export function SearchableSelect({
         </span>
         <span className="text-ink3 text-[10px]">▾</span>
       </button>
-      {open && (
-        <div ref={dropdownRef} className="absolute z-20 mt-1 w-full min-w-[260px] bg-white border border-line rounded-md shadow-lg overflow-hidden">
+      {open && pos && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{ position: "fixed", left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: pos.maxH }}
+          className="z-[100] flex flex-col bg-white border border-line rounded-md shadow-lg overflow-hidden"
+        >
           <div className="p-1.5 border-b border-line2">
             <input
               ref={inputRef}
@@ -136,7 +175,7 @@ export function SearchableSelect({
               className="w-full px-2 py-1 rounded border border-line bg-white font-ui text-[11.5px] text-ink focus:outline-none focus:border-forest"
             />
           </div>
-          <div className="max-h-60 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto">
             {allowEmpty && (
               <button
                 type="button"
@@ -205,7 +244,8 @@ export function SearchableSelect({
               });
             })()}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

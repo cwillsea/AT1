@@ -147,6 +147,21 @@ export function getTransfersDir(): string {
   return TRANSFERS_DIR;
 }
 
+// Pull the distinct non-empty "Transfer ID" values out of a gifts-*/payments-*
+// CSV. Used by the upload route to un-delete transfers when their file is
+// reuploaded (a stale DeletedDeposit soft-delete would otherwise keep them hidden).
+export function extractTransferIds(csvText: string): string[] {
+  const { header, rows } = parseCsv(csvText);
+  const idx = header.indexOf("Transfer ID");
+  if (idx === -1) return [];
+  const ids = new Set<string>();
+  for (const r of rows) {
+    const id = r[idx];
+    if (id) ids.add(id);
+  }
+  return [...ids];
+}
+
 // Reads every gifts-*.csv and payments-*.csv in subsplash/transfers/ and
 // groups by transfer ID. Files of either type are optional per transfer.
 export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] } {
@@ -189,11 +204,35 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
   });
   const seenPayments = new Set<string>();
   const dedupedPayments = allPayments.filter((p) => {
-    const k = p.paymentId || `${p.transferId}|${p.transactionTimestamp}|${p.email}|${p.grossAmount}`;
+    // Include grossAmount: Subsplash reuses the same Payment ID for a refund of a
+    // payment (the refund row carries the negative of the original amount), so
+    // paymentId alone would collide the payment with its refund and drop one.
+    const k = p.paymentId
+      ? `${p.paymentId}|${p.grossAmount}`
+      : `${p.transferId}|${p.transactionTimestamp}|${p.email}|${p.grossAmount}`;
     if (seenPayments.has(k)) return false;
     seenPayments.add(k);
     return true;
   });
+
+  // Refund rows arrive with a blank Payment source but reuse the original
+  // payment's Payment ID (and carry the negated gross/fee/net). Inherit the
+  // original payment's source so the refund reverses the same income
+  // account/fund/tag — and its negative fee reverses the original fee — instead
+  // of landing as an unmatched "(no source)" line. Falls back to blank when the
+  // original payment isn't among the loaded files.
+  const sourceByPaymentId = new Map<string, string>();
+  for (const p of dedupedPayments) {
+    if (p.paymentId && p.paymentSource && !sourceByPaymentId.has(p.paymentId)) {
+      sourceByPaymentId.set(p.paymentId, p.paymentSource);
+    }
+  }
+  for (const p of dedupedPayments) {
+    if (!p.paymentSource && p.paymentId) {
+      const original = sourceByPaymentId.get(p.paymentId);
+      if (original) p.paymentSource = original;
+    }
+  }
 
   // Group by transferId
   const byId = new Map<string, Transfer>();

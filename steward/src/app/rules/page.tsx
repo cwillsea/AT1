@@ -10,6 +10,9 @@ export default async function RulesPage() {
     squareRules,
     subsplashGiftRules,
     subsplashPaymentRules,
+    creditCardExpenseRules,
+    creditCardMinistryRules,
+    creditCardMerchantRules,
     accounts,
     funds,
     tags,
@@ -26,6 +29,18 @@ export default async function RulesPage() {
     prisma.categorizationRule.findMany({
       where: { source: "subsplash-payment" },
       orderBy: [{ pattern: "asc" }],
+    }),
+    prisma.categorizationRule.findMany({
+      where: { source: "credit-card-expense" },
+      orderBy: [{ priority: "desc" }, { id: "asc" }],
+    }),
+    prisma.categorizationRule.findMany({
+      where: { source: "credit-card-ministry" },
+      orderBy: [{ priority: "desc" }, { id: "asc" }],
+    }),
+    prisma.categorizationRule.findMany({
+      where: { source: "credit-card-merchant" },
+      orderBy: [{ priority: "desc" }, { id: "asc" }],
     }),
     prisma.account.findMany({ where: { category: { in: ["income", "expense"] } }, orderBy: { accountNumber: "asc" } }),
     prisma.fund.findMany({ orderBy: { name: "asc" } }),
@@ -73,6 +88,9 @@ export default async function RulesPage() {
         squareRules={squareRules}
         subsplashGiftRules={subsplashGiftRules}
         subsplashPaymentRules={subsplashPaymentRules}
+        creditCardExpenseRules={creditCardExpenseRules}
+        creditCardMinistryRules={creditCardMinistryRules}
+        creditCardMerchantRules={creditCardMerchantRules}
         accounts={accounts.map((a) => ({ number: a.accountNumber, name: a.name, category: a.category }))}
         funds={funds.map((f) => ({ id: f.id, name: f.name }))}
         tags={tags.map((t) => ({ id: t.id, name: t.name, category: t.category }))}

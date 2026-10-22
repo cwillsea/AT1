@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 const NAV = [
+  { href: "/chat", label: "Ask AI", abbr: "AI" },
   { href: "/imports", label: "Square imports", abbr: "Sq" },
   { href: "/subsplash", label: "Subsplash imports", abbr: "Su" },
   { href: "/bank", label: "Bank reconciliation", abbr: "Bk" },
-  { href: "/bank-activity", label: "Bank activity", abbr: "Ba" },
   { href: "/credit-card", label: "Credit card", abbr: "CC" },
   { href: "/powerchurch", label: "PowerChurch imports", abbr: "PC" },
   { href: "/rules", label: "Rules", abbr: "Ru" },
@@ -21,7 +21,7 @@ export function Sidebar() {
   return (
     <nav
       className={`bg-bg border-r border-line p-4 flex flex-col gap-1 shrink-0 transition-[width] duration-200 ${
-        collapsed ? "w-[56px]" : "w-[220px]"
+        collapsed ? "w-[56px]" : "w-[180px]"
       }`}
     >
       {/* Logo row with collapse toggle */}

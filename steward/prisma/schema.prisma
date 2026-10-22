@@ -152,6 +152,27 @@ model PowerChurchSplit {
   @@id([externalKey, index])
 }
 
+// Cached running-balance sum for an Aplos account. The Aplos API does not
+// expose a balance endpoint, so we sum all GL line amounts on the account
+// once and store the result here. Refresh on demand from /reconcile.
+model AplosAccountBalance {
+  accountNumber Int      @id
+  balance       Float
+  txnCount      Int
+  computedAt    DateTime @default(now())
+}
+
+// User-confirmed link between a Teller bank transaction and an Aplos
+// transaction when the auto-matcher couldn't pair them (often old checks,
+// where the bank cleared weeks after the entry was posted). The page reads
+// these to force matches before running the heuristic matcher.
+model ReconcileMatch {
+  id         String   @id @default(cuid())
+  bankTxnId  String   @unique
+  aplosTxnId String   @unique
+  linkedAt   DateTime @default(now())
+}
+
 model PostingLog {
   id           Int      @id @default(autoincrement())
   source       String
@@ -161,4 +182,62 @@ model PostingLog {
   requestBody  String
   responseBody String?
   postedAt     DateTime @default(now())
+}
+
+// Local mirror of the Aplos general ledger — the queryable copy of "the books."
+// Aplos has no balance/report endpoints, so this normalized ledger IS the
+// reporting layer. Populated by src/lib/aplos-ledger-sync.ts.
+//
+// The /transactions LIST endpoint returns headers only (id, date, contact,
+// created, modified, amount, in_closed_period); note/memo and lines come only
+// from GET /transactions/{id}. Incremental sync watermarks on `modifiedAt`
+// (Aplos "modified") via the f_lastupdated filter, so edits and backdated
+// entries are caught — not just new rows.
+model AplosTransaction {
+  id           Int      @id                 // Aplos transaction id
+  date         String                       // YYYY-MM-DD
+  note         String?                      // detail-only
+  memo         String?                      // detail-only
+  contactName  String?                      // flattened from contact{companyname|first+last}
+  contactId    Int?
+  amount       Float                        // Aplos header total
+  isReconciled Boolean  @default(false)
+  inClosedPeriod Boolean @default(false)    // Aplos in_closed_period flag
+  createdAt    String?                      // Aplos "created" (ISO w/ offset, e.g. 2026-07-05T01:00:30.480-0700)
+  modifiedAt   String?                      // Aplos "modified" — sync watermark; round-trips into f_lastupdated
+  raw          String                       // full detail JSON — insurance for un-modeled fields
+  syncedAt     DateTime @default(now())
+  lines        AplosTransactionLine[]
+
+  @@index([date])
+  @@index([modifiedAt])
+}
+
+// One split line of a transaction. Sum of a balanced entry's lines ≈ 0.
+// accountNumber/fundId are loose indexed ints (→ Account/Fund) matching the
+// CategorizationRule/BankEntry convention, so a line referencing an un-synced
+// or disabled account never fails the insert.
+model AplosTransactionLine {
+  id            Int              @id          // Aplos line id
+  transactionId Int
+  transaction   AplosTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  lineIndex     Int                           // 0-based order within the transaction
+  amount        Float                         // signed exactly as Aplos returns
+  accountNumber Int?                          // → Account.accountNumber (loose)
+  fundId        Int?                          // → Fund.id (loose)
+  tags          AplosLineTag[]
+
+  @@index([accountNumber])
+  @@index([fundId])
+  @@index([transactionId])
+}
+
+// A line can carry multiple tags (ministries) → many-to-many.
+model AplosLineTag {
+  lineId Int
+  tagId  Int                                  // → Tag.id (loose)
+  line   AplosTransactionLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@id([lineId, tagId])
+  @@index([tagId])
 }

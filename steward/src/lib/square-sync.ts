@@ -43,8 +43,24 @@ export async function syncSquare(): Promise<SquareSyncResult> {
   // No watermark yet: start from a fixed origin date so first-sync windows are
   // predictable instead of relative-to-today. Bump this when going to prod.
   const DEFAULT_ORIGIN = "2026-05-01";
-  const beginDate = last ? addDaysIso(last, 1) : DEFAULT_ORIGIN;
+  // Square does not create a payout record until a day or more after the sales
+  // it settles, so a sync ending "today" cannot see the last few days' payouts
+  // -- they do not exist yet. Resuming at watermark+1 next time then skips
+  // straight past them and they are stranded forever. That is how the
+  // 2026-08-13 payout went missing: the 2026-08-13 sync ran at 08:15 before
+  // Square had created it, and the next sync began at 2026-08-14.
+  //
+  // So every sync re-covers the trailing LOOKBACK_DAYS. Overlap is safe:
+  // loadAllDeposits keys deposits by payout ID and takes each payout's rows
+  // from a single CSV, so a re-fetched payout replaces rather than duplicates.
+  const LOOKBACK_DAYS = 7;
+  const lookbackBegin = last ? addDaysIso(last, -LOOKBACK_DAYS) : DEFAULT_ORIGIN;
+  // ISO dates compare correctly as strings; never reach back before the origin.
+  const beginDate = lookbackBegin < DEFAULT_ORIGIN ? DEFAULT_ORIGIN : lookbackBegin;
 
+  // Only bails when the watermark is somehow ahead of today (clock skew, a
+  // hand-edited SyncState). A normal run always has work to do now that the
+  // window reaches backwards.
   if (beginDate > endDate) {
     return { beginDate, endDate, csvWritten: null, rowCount: 0, skipped: true, skipReason: "already up to date" };
   }

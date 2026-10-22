@@ -35,11 +35,15 @@ function Pill({
   status,
   detail,
   disabled,
+  onSync,
+  syncing,
 }: {
   label: string;
   status: ConnectorStatus;
   detail?: string;
   disabled?: boolean;
+  onSync?: () => void;
+  syncing?: boolean;
 }) {
   const dotClass = disabled
     ? "bg-ink3/40"
@@ -47,21 +51,36 @@ function Pill({
       ? "bg-forest"
       : "bg-honey";
   const textClass = disabled ? "text-ink3" : "text-ink2";
+  const clickable = !disabled && !!onSync;
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full bg-panel border border-line ${disabled ? "opacity-60" : ""}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+    <button
+      type="button"
+      onClick={onSync}
+      disabled={disabled || !onSync || syncing}
+      title={clickable ? `Sync ${label}` : undefined}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full bg-panel border border-line transition-colors ${disabled ? "opacity-60 cursor-default" : ""} ${clickable ? "cursor-pointer hover:border-forest hover:bg-panel/80" : ""} disabled:cursor-default`}
+    >
+      {syncing ? (
+        <svg className="w-1.5 h-1.5 animate-spin text-forest" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" opacity="0.25" />
+          <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round" fill="none" />
+        </svg>
+      ) : (
+        <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+      )}
       <span className={`font-ui text-[11.5px] font-semibold ${textClass}`}>{label}</span>
       <span className="font-mono text-[10px] text-ink3">
-        {disabled ? "not connected" : detail ?? timeAgo(status.lastSyncAt)}
+        {disabled ? "not connected" : syncing ? "syncing…" : detail ?? timeAgo(status.lastSyncAt)}
       </span>
-    </div>
+    </button>
   );
 }
 
 export function TopBar() {
   const router = useRouter();
   const [status, setStatus] = useState<StatusResp | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  // Which sync is in flight: "all" (the Sync data button) or a single source.
+  const [syncingSource, setSyncingSource] = useState<"all" | "aplos" | "square" | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const loadStatus = async () => {
@@ -75,11 +94,16 @@ export function TopBar() {
     loadStatus();
   }, []);
 
-  const handleSync = async () => {
-    setSyncing(true);
+  const handleSync = async (source?: "aplos" | "square") => {
+    if (syncingSource) return;
+    setSyncingSource(source ?? "all");
     setSyncMsg("Syncing…");
     try {
-      const res = await fetch("/api/sync", { method: "POST" });
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(source ? { source } : {}),
+      });
       const data = await res.json();
       const parts: string[] = [];
       if (data.aplos) parts.push(`Aplos: ${data.aplos.accounts} accounts, ${data.aplos.funds} funds, ${data.aplos.tags} tags, ${data.aplos.purposes ?? 0} purposes`);
@@ -95,18 +119,25 @@ export function TopBar() {
     } catch (e) {
       setSyncMsg(`Sync failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      setSyncing(false);
+      setSyncingSource(null);
     }
   };
 
   return (
     <div className="border-b border-line bg-bg/90 backdrop-blur-sm px-8 py-3 flex items-center justify-between gap-4 sticky top-0 z-10">
       <div className="flex items-center gap-2 flex-wrap">
-        <Pill label="Aplos" status={status?.aplos ?? { connected: false, lastSyncAt: null }} />
+        <Pill
+          label="Aplos"
+          status={status?.aplos ?? { connected: false, lastSyncAt: null }}
+          onSync={() => handleSync("aplos")}
+          syncing={syncingSource === "aplos" || syncingSource === "all"}
+        />
         <Pill
           label="Square"
           status={status?.square ?? { connected: false, lastSyncAt: null }}
           detail={status?.square.lastFetchedThrough ? `through ${status.square.lastFetchedThrough}` : undefined}
+          onSync={() => handleSync("square")}
+          syncing={syncingSource === "square" || syncingSource === "all"}
         />
         <Pill label="Bank" status={{ connected: false, lastSyncAt: null }} disabled />
         <Pill label="Subsplash" status={{ connected: false, lastSyncAt: null }} disabled />
@@ -118,11 +149,11 @@ export function TopBar() {
           </span>
         )}
         <button
-          onClick={handleSync}
-          disabled={syncing}
+          onClick={() => handleSync()}
+          disabled={syncingSource !== null}
           className="px-4 py-2 rounded-full bg-forest text-bg font-ui text-[12px] font-semibold cursor-pointer disabled:opacity-60 inline-flex items-center gap-2"
         >
-          {syncing && (
+          {syncingSource !== null && (
             <svg
               className="w-3.5 h-3.5 animate-spin"
               viewBox="0 0 24 24"
@@ -139,7 +170,7 @@ export function TopBar() {
               />
             </svg>
           )}
-          {syncing ? "Syncing…" : "Sync data"}
+          {syncingSource !== null ? "Syncing…" : "Sync data"}
         </button>
       </div>
     </div>

@@ -88,23 +88,42 @@ function groupIntoDeposits(rows: CsvRow[], rules: Rule[]): Deposit[] {
 }
 
 // Reads every CSV in ../square/deposits and groups across all of them.
-// Deposits are keyed by payout ID (deposit_id column) so overlapping CSVs
-// naturally de-duplicate.
+//
+// Sync windows deliberately overlap (see LOOKBACK_DAYS in square-sync.ts), so
+// the same payout routinely appears in more than one CSV. Rows carry no payment
+// ID, and two distinct payments can produce byte-identical rows -- a payout with
+// two separate $1.50 "Youth Snacks (Regular)" sales is real data, not a
+// duplicate -- so rows cannot be de-duplicated on their own. Instead every row
+// for a payout is taken from exactly one file: the last in sorted order, which
+// is the most recently fetched window and so the most complete (it has picked up
+// any late refunds or adjustments).
 export function loadAllDeposits(rules: Rule[]): { csvPaths: string[]; deposits: Deposit[] } {
   const dir = path.resolve(process.cwd(), "..", "square", "deposits");
   const csvs = readdirSync(dir).filter((f) => f.endsWith(".csv")).sort();
   if (csvs.length === 0) {
     throw new Error(`No CSV files in ${dir}`);
   }
-  const allRows: CsvRow[] = [];
+
   const csvPaths: string[] = [];
+  const perFile: { file: string; rows: CsvRow[] }[] = [];
   for (const f of csvs) {
     const csvPath = path.join(dir, f);
     csvPaths.push(csvPath);
-    const text = readFileSync(csvPath, "utf8");
-    for (const r of parseCsv(text)) {
-      allRows.push(r);
+    perFile.push({ file: f, rows: parseCsv(readFileSync(csvPath, "utf8")) });
+  }
+
+  // Later files win, so this ends up holding the last file supplying each payout.
+  const sourceOf = new Map<string, string>();
+  for (const { file, rows } of perFile) {
+    for (const r of rows) sourceOf.set(r.depositId, file);
+  }
+
+  const allRows: CsvRow[] = [];
+  for (const { file, rows } of perFile) {
+    for (const r of rows) {
+      if (sourceOf.get(r.depositId) === file) allRows.push(r);
     }
   }
+
   return { csvPaths, deposits: groupIntoDeposits(allRows, rules) };
 }

@@ -1,7 +1,8 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
-import { getTransfersDir } from "@/lib/subsplash-csv";
+import { getTransfersDir, extractTransferIds } from "@/lib/subsplash-csv";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
 
   const written: string[] = [];
   const skipped: { name: string; reason: string }[] = [];
+  const seenTransferIds = new Set<string>();
 
   for (const f of files) {
     if (!(f instanceof File)) {
@@ -47,9 +49,11 @@ export async function POST(request: Request) {
             skipped.push({ name: entryName, reason: "filename doesn't start with gifts/payments" });
             continue;
           }
+          const data = entry.getData();
           const target = path.join(dir, entryName);
-          writeFileSync(target, entry.getData());
+          writeFileSync(target, data);
           written.push(entryName);
+          for (const id of extractTransferIds(data.toString("utf8"))) seenTransferIds.add(id);
         }
       } catch (e) {
         skipped.push({ name, reason: `zip parse failed: ${e instanceof Error ? e.message : String(e)}` });
@@ -62,10 +66,25 @@ export async function POST(request: Request) {
       const target = path.join(dir, name);
       writeFileSync(target, buffer);
       written.push(name);
+      for (const id of extractTransferIds(buffer.toString("utf8"))) seenTransferIds.add(id);
     } else {
       skipped.push({ name, reason: "not a csv or zip" });
     }
   }
 
-  return Response.json({ written, skipped });
+  // Reuploading a transfer's CSV should bring it back if it was previously
+  // soft-deleted. Clear stale DeletedDeposit marks for the transfers we just wrote,
+  // otherwise the card stays hidden even though its data is present again.
+  let restored = 0;
+  if (seenTransferIds.size > 0) {
+    const result = await prisma.deletedDeposit.deleteMany({
+      where: {
+        source: "subsplash",
+        externalKey: { in: [...seenTransferIds].map((id) => `subsplash:${id}`) },
+      },
+    });
+    restored = result.count;
+  }
+
+  return Response.json({ written, skipped, restored });
 }

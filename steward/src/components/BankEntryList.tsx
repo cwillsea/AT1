@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { BankCard, type BankEntryForCard, type AccountOpt, type FundOpt, type TagOpt } from "./BankCard";
 import { fmtUSD } from "@/lib/fmt";
 
@@ -42,9 +43,34 @@ function monthSortKey(label: string): number {
 }
 
 export function BankEntryList({ entries, initialMarkedKeys, initialDeletedKeys, accounts, funds, tags, names, summariesByMonth }: Props) {
+  const router = useRouter();
   const [marked, setMarked] = useState(() => new Set(initialMarkedKeys));
   // Soft-deleted entries (legacy data) stay hidden — no UI to create new ones now.
   const [deleted] = useState(() => new Set(initialDeletedKeys));
+  // Whole statements the user is currently deleting — hidden optimistically.
+  const [deletingMonths, setDeletingMonths] = useState<Set<string>>(() => new Set());
+
+  const deleteStatement = async (month: string) => {
+    if (!confirm(`Delete the entire "${month}" statement and all its entries? This can't be undone (re-upload the PDF to restore).`)) return;
+    setDeletingMonths((prev) => new Set(prev).add(month));
+    try {
+      const res = await fetch("/api/bank/delete-statement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statementMonth: month }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      router.refresh();
+    } catch (e) {
+      // Roll back the optimistic hide on failure.
+      setDeletingMonths((prev) => {
+        const n = new Set(prev);
+        n.delete(month);
+        return n;
+      });
+      alert(`Failed to delete statement: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   const [categorization, setCategorization] = useState<Record<string, { accountNumber: number | null; fundId: number | null; tagId: number | null }>>(() => {
     const init: Record<string, { accountNumber: number | null; fundId: number | null; tagId: number | null }> = {};
     for (const e of entries) init[e.externalKey] = { accountNumber: e.accountNumber, fundId: e.fundId, tagId: e.tagId };
@@ -52,7 +78,7 @@ export function BankEntryList({ entries, initialMarkedKeys, initialDeletedKeys, 
   });
 
   const visible = entries
-    .filter((e) => !deleted.has(e.externalKey))
+    .filter((e) => !deleted.has(e.externalKey) && !deletingMonths.has(e.statementMonth))
     .map((e) => ({ ...e, ...categorization[e.externalKey] }));
 
   // Group by statementMonth, then sort groups newest-first.
@@ -68,6 +94,23 @@ export function BankEntryList({ entries, initialMarkedKeys, initialDeletedKeys, 
       .map(([month, items]) => ({ month, items }));
   }, [visible]);
 
+  // A month is "completed" once its pending net (sum of unentered amounts)
+  // rounds to zero — everything on the statement is accounted for. Recomputed
+  // from `marked` so a month slides into the Completed section the moment the
+  // last entry is marked.
+  const { active, completed } = useMemo(() => {
+    const active: typeof groups = [];
+    const completed: typeof groups = [];
+    for (const g of groups) {
+      const pendingNet = g.items
+        .filter((e) => !marked.has(e.externalKey))
+        .reduce((s, e) => s + e.amount, 0);
+      if (Math.abs(pendingNet) < 0.005) completed.push(g);
+      else active.push(g);
+    }
+    return { active, completed };
+  }, [groups, marked]);
+
   if (groups.length === 0) {
     return (
       <div className="bg-honey-soft border border-honey/30 rounded-xl px-[18px] py-3.5 font-ui text-[12.5px] text-ink2">
@@ -76,24 +119,41 @@ export function BankEntryList({ entries, initialMarkedKeys, initialDeletedKeys, 
     );
   }
 
+  const renderShelf = (g: (typeof groups)[number], defaultOpen: boolean) => (
+    <StatementShelf
+      key={g.month}
+      month={g.month}
+      items={g.items}
+      summary={summariesByMonth[g.month] ?? null}
+      marked={marked}
+      setMarked={setMarked}
+      setCategorization={setCategorization}
+      accounts={accounts}
+      funds={funds}
+      tags={tags}
+      names={names}
+      defaultOpen={defaultOpen}
+      onDelete={() => deleteStatement(g.month)}
+    />
+  );
+
   return (
     <div className="flex flex-col gap-3">
-      {groups.map((g, i) => (
-        <StatementShelf
-          key={g.month}
-          month={g.month}
-          items={g.items}
-          summary={summariesByMonth[g.month] ?? null}
-          marked={marked}
-          setMarked={setMarked}
-          setCategorization={setCategorization}
-          accounts={accounts}
-          funds={funds}
-          tags={tags}
-          names={names}
-          defaultOpen={i === 0}
-        />
-      ))}
+      {active.length === 0 && (
+        <div className="bg-forest-soft border border-forest/30 rounded-xl px-[18px] py-3.5 font-ui text-[12.5px] text-ink2">
+          All statements are fully accounted for — nothing pending.
+        </div>
+      )}
+      {active.map((g, i) => renderShelf(g, i === 0))}
+
+      {completed.length > 0 && (
+        <div className="mt-1 border-t border-line pt-4 flex flex-col gap-3">
+          <div className="px-[18px] font-ui text-[11px] text-ink3 tracking-[0.08em] uppercase">
+            Completed · {completed.length} statement{completed.length === 1 ? "" : "s"}
+          </div>
+          {completed.map((g) => renderShelf(g, false))}
+        </div>
+      )}
     </div>
   );
 }
@@ -110,6 +170,7 @@ function StatementShelf({
   tags,
   names,
   defaultOpen,
+  onDelete,
 }: {
   month: string;
   items: BankEntryForCard[];
@@ -122,6 +183,7 @@ function StatementShelf({
   tags: TagOpt[];
   names: { accounts: Record<number, string>; funds: Record<number, string>; tags: Record<number, string> };
   defaultOpen: boolean;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [tab, setTab] = useState<Kind>("check");
@@ -172,32 +234,44 @@ function StatementShelf({
 
   return (
     <div className="border border-line rounded-xl bg-panel/50">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-[18px] py-3.5 cursor-pointer hover:bg-line2/40 rounded-xl"
-      >
-        <div className="flex items-center gap-3">
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}
-            className="text-ink2"
-          >
-            <path d="M 3 2 L 8 6 L 3 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span className="font-display text-[18px] text-ink font-medium tracking-tight">{month}</span>
-          <span className="font-ui text-[11px] text-ink3">
-            {items.length} entries · {counts.check} checks · {counts.debit} debits · {counts.credit} credits
-          </span>
-        </div>
-        <div className="text-right">
-          <div className="font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">pending net</div>
-          <div className={`font-display text-[16px] font-medium ${pendingNet >= 0 ? "text-forest" : "text-clay"}`}>
-            {fmtUSD(pendingNet, { sign: true })}
+      <div className="flex items-center pr-[18px]">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 flex items-center justify-between px-[18px] py-3.5 cursor-pointer hover:bg-line2/40 rounded-xl"
+        >
+          <div className="flex items-center gap-3">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}
+              className="text-ink2"
+            >
+              <path d="M 3 2 L 8 6 L 3 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="font-display text-[18px] text-ink font-medium tracking-tight">{month}</span>
+            <span className="font-ui text-[11px] text-ink3">
+              {items.length} entries · {counts.check} checks · {counts.debit} debits · {counts.credit} credits
+            </span>
           </div>
-        </div>
-      </button>
+          <div className="text-right">
+            <div className="font-ui text-[10.5px] text-ink3 tracking-[0.06em] uppercase">pending net</div>
+            <div className={`font-display text-[16px] font-medium ${pendingNet >= 0 ? "text-forest" : "text-clay"}`}>
+              {fmtUSD(pendingNet, { sign: true })}
+            </div>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          title="Delete this statement and all its entries"
+          className="ml-3 shrink-0 w-7 h-7 grid place-items-center rounded-lg text-ink3 hover:text-clay hover:bg-clay/10 cursor-pointer transition-colors"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+            <path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-9 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
 
       {open && (
         <div className="px-[18px] pb-4 pt-1 flex flex-col gap-3">
