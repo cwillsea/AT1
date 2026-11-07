@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { RulesTabs } from "@/components/RulesTabs";
 import { loadAllTransfers } from "@/lib/subsplash-csv";
 import { loadAllBatches } from "@/lib/in-person-csv";
+import { loadAllPayrollBatches } from "@/lib/payroll-csv-server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export default async function RulesPage() {
     creditCardExpenseRules,
     creditCardMinistryRules,
     creditCardMerchantRules,
+    payrollRules,
     accounts,
     funds,
     tags,
@@ -42,6 +44,10 @@ export default async function RulesPage() {
       where: { source: "credit-card-merchant" },
       orderBy: [{ priority: "desc" }, { id: "asc" }],
     }),
+    prisma.categorizationRule.findMany({
+      where: { source: "payroll" },
+      orderBy: [{ pattern: "asc" }],
+    }),
     prisma.account.findMany({ where: { category: { in: ["income", "expense"] } }, orderBy: { accountNumber: "asc" } }),
     prisma.fund.findMany({ orderBy: { name: "asc" } }),
     prisma.tag.findMany({ orderBy: { name: "asc" } }),
@@ -68,6 +74,9 @@ export default async function RulesPage() {
   } catch { /* no in-person batches — fine */ }
   const observedGiftFunds = [...giftFunds].sort();
   const observedPaymentSources = [...paymentSources].sort();
+  const observedPayrollRecipients = [
+    ...new Set(loadAllPayrollBatches([]).batches.flatMap((b) => b.recipients.map((r) => r.name))),
+  ].sort();
 
   return (
     <>
@@ -91,12 +100,14 @@ export default async function RulesPage() {
         creditCardExpenseRules={creditCardExpenseRules}
         creditCardMinistryRules={creditCardMinistryRules}
         creditCardMerchantRules={creditCardMerchantRules}
+        payrollRules={payrollRules}
         accounts={accounts.map((a) => ({ number: a.accountNumber, name: a.name, category: a.category }))}
         funds={funds.map((f) => ({ id: f.id, name: f.name }))}
         tags={tags.map((t) => ({ id: t.id, name: t.name, category: t.category }))}
         purposes={purposes.map((p) => ({ id: p.id, name: p.name, incomeAccount: p.incomeAccount, fundId: p.fundId }))}
         observedGiftFunds={observedGiftFunds}
         observedPaymentSources={observedPaymentSources}
+        observedPayrollRecipients={observedPayrollRecipients}
       />
     </>
   );

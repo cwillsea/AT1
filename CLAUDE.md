@@ -53,6 +53,7 @@ In the steward UI: **`/imports` = Square**, **`/subsplash` = Subsplash**. The To
 - `"square"` — regex `pattern` matched against description → `accountNumber + fundId + tagId`
 - `"subsplash-gift"` — exact match on Subsplash `Fund` value → `purposeId` (Aplos purpose auto-derives account+fund)
 - `"subsplash-payment"` — exact match on Subsplash `Payment source` value → `accountNumber + fundId + tagId`
+- `"payroll"` — exact (case-insensitive) match on Truist ACH `Recipient Name` → `accountNumber + fundId + tagId`
 
 ## Component / route map
 
@@ -63,12 +64,15 @@ src/app/
 ├── imports/page.tsx           Square Imports (server component, uses square-csv-server.ts)
 ├── subsplash/page.tsx         Subsplash Imports (server component, reads ../subsplash/transfers/*.csv)
 ├── credit-card/page.tsx       Truist commercial card CSV transformer (client-side only, no DB)
+├── payroll/page.tsx           Truist ACH payroll batches (reads ../payroll/batches/*.csv), one card per Tracking ID
 ├── rules/page.tsx             Tabbed rules editor (Square | Subsplash)
 └── api/
     ├── sync/route.ts          POST → runs aplos + square syncs
     ├── sync/status/route.ts   GET  → connector last-sync info for TopBar pills
     ├── square/export/route.ts GET  → streams Aplos GL import CSV for download
     ├── subsplash/upload/      POST multipart, accepts .csv or .zip → writes to ../subsplash/transfers/
+    ├── payroll/upload/        POST multipart, accepts Truist ACH .csv → writes to ../payroll/batches/
+    ├── payroll/export/        GET  → Aplos GL import xlsx, one negative expense line per recipient
     ├── rules/                 GET + POST + PATCH/DELETE [id]
     ├── manual-mark/route.ts   POST { externalKey, marked }
     └── delete-deposit/route.ts POST { externalKey, deleted }
@@ -99,7 +103,9 @@ src/lib/
 ├── square-csv.ts              Pure classifier + rollup types — no filesystem access, safe for client import
 ├── square-csv-server.ts       Filesystem loader: reads ../square/deposits/*.csv → Deposit[] (server only)
 ├── square-sync.ts             Spawns node ../square/index.js with computed BEGIN/END_DATE env
-└── subsplash-csv.ts           Parses gifts-*.csv + payments-*.csv, groups by Transfer ID
+├── subsplash-csv.ts           Parses gifts-*.csv + payments-*.csv, groups by Transfer ID
+├── payroll-csv.ts             Pure Truist ACH payroll parser + recipient classifier (client-safe)
+└── payroll-csv-server.ts      Loads ../payroll/batches/*.csv, dedupes by Tracking ID, loads payroll rules
 ```
 
 ## Hard-won gotchas (real bugs we hit — don't repeat)

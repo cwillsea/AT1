@@ -18,6 +18,9 @@ bank-statements/
 subsplash/transfers/
 subsplash/in-person/
 powerchurch/
+/payroll/
+genfi/.profile/
+genfi/captures/
 *.csv
 *.pdf
 *.xlsx

@@ -2,14 +2,20 @@
 
 import { useState } from "react";
 
-export function GenerateImportButton({ blockedByUnmatched = false }: { blockedByUnmatched?: boolean }) {
+export function GenerateImportButton({
+  blockedByUnmatched = false,
+  endpoint = "/api/square/export",
+}: {
+  blockedByUnmatched?: boolean;
+  endpoint?: string;
+}) {
   const [loading, setLoading] = useState(false);
 
   async function handleClick() {
     if (blockedByUnmatched) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/square/export");
+      const res = await fetch(endpoint);
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

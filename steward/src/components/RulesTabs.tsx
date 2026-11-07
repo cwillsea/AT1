@@ -4,6 +4,7 @@ import { useState } from "react";
 import { RulesEditor } from "./RulesEditor";
 import { SubsplashRulesEditor } from "./SubsplashRulesEditor";
 import { CreditCardRulesEditor } from "./CreditCardRulesEditor";
+import { PayrollRulesEditor } from "./PayrollRulesEditor";
 
 type Rule = {
   id: number;
@@ -30,12 +31,14 @@ export function RulesTabs({
   creditCardExpenseRules,
   creditCardMinistryRules,
   creditCardMerchantRules,
+  payrollRules,
   accounts,
   funds,
   tags,
   purposes,
   observedGiftFunds,
   observedPaymentSources,
+  observedPayrollRecipients,
 }: {
   squareRules: Rule[];
   subsplashGiftRules: Rule[];
@@ -43,14 +46,16 @@ export function RulesTabs({
   creditCardExpenseRules: Rule[];
   creditCardMinistryRules: Rule[];
   creditCardMerchantRules: Rule[];
+  payrollRules: Rule[];
   accounts: AccountOpt[];
   funds: FundOpt[];
   tags: TagOpt[];
   purposes: PurposeOpt[];
   observedGiftFunds: string[];
   observedPaymentSources: string[];
+  observedPayrollRecipients: string[];
 }) {
-  const [tab, setTab] = useState<"square" | "subsplash" | "credit-card">("square");
+  const [tab, setTab] = useState<"square" | "subsplash" | "credit-card" | "payroll">("square");
 
   const tabClass = (active: boolean) =>
     `px-4 py-2 font-ui text-[12.5px] font-semibold border-b-2 cursor-pointer transition-colors ${
@@ -63,6 +68,8 @@ export function RulesTabs({
   const paymentSourcesCovered = new Set(subsplashPaymentRules.map((r) => r.pattern));
   const paymentSourcesMissing = observedPaymentSources.filter((s) => !paymentSourcesCovered.has(s));
   const subsplashTotalMissing = giftFundsMissing.length + paymentSourcesMissing.length;
+  const payrollCovered = new Set(payrollRules.map((r) => r.pattern.trim().toLowerCase()));
+  const payrollMissing = observedPayrollRecipients.filter((n) => !payrollCovered.has(n.trim().toLowerCase())).length;
 
   return (
     <>
@@ -78,6 +85,10 @@ export function RulesTabs({
         </button>
         <button onClick={() => setTab("credit-card")} className={tabClass(tab === "credit-card")}>
           Credit Card
+        </button>
+        <button onClick={() => setTab("payroll")} className={tabClass(tab === "payroll")}>
+          Payroll
+          {payrollMissing > 0 && <span className="ml-1.5 text-honey">● {payrollMissing}</span>}
         </button>
       </div>
 
@@ -116,6 +127,16 @@ export function RulesTabs({
           accounts={accounts}
           funds={funds}
           tags={tags}
+        />
+      )}
+
+      {tab === "payroll" && (
+        <PayrollRulesEditor
+          rules={payrollRules}
+          accounts={accounts}
+          funds={funds}
+          tags={tags}
+          observedRecipients={observedPayrollRecipients}
         />
       )}
     </>

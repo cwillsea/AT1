@@ -10,6 +10,7 @@ const NAV = [
   { href: "/subsplash", label: "Subsplash imports", abbr: "Su" },
   { href: "/bank", label: "Bank reconciliation", abbr: "Bk" },
   { href: "/credit-card", label: "Credit card", abbr: "CC" },
+  { href: "/payroll", label: "Payroll", abbr: "Pa" },
   { href: "/powerchurch", label: "PowerChurch imports", abbr: "PC" },
   { href: "/rules", label: "Rules", abbr: "Ru" },
 ];
