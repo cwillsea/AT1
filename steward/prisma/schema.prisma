@@ -14,6 +14,8 @@ datasource db {
 //   "square"             — regex on description → accountNumber + fundId + tagId
 //   "subsplash-gift"     — exact match on Fund   → purposeId (account/fund auto-derived)
 //   "subsplash-payment"  — exact match on Source → accountNumber + fundId + tagId
+//   "payroll"            — exact match on Recipient Name → one row per split line,
+//                          each with accountNumber + fundId + tagId + splitKind/splitValue
 model CategorizationRule {
   id            Int      @id @default(autoincrement())
   source        String
@@ -27,6 +29,10 @@ model CategorizationRule {
   // For subsplash-gift:
   purposeId     Int?
   label         String?
+  // For payroll split lines: "fixed" ($ splitValue) | "percent" (splitValue %)
+  // | "remainder"/null (whatever is left of the payment).
+  splitKind     String?
+  splitValue    Float?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
