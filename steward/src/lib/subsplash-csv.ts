@@ -36,7 +36,6 @@ export type PaymentRow = {
   paymentSource: string; // "Academy Pizza Wednesday", "Youth Camp", etc.
   paymentMethod: string;
   paymentId: string;
-  transferAmount: number; // total deposit
 };
 
 export type GiftRollup = { fund: string; count: number; gross: number; fee: number; net: number };
@@ -45,7 +44,7 @@ export type PaymentRollup = { paymentSource: string; count: number; gross: numbe
 export type Transfer = {
   id: string;             // transferId
   transferDate: string;   // YYYY-MM-DD
-  transferAmount: number; // total bank deposit
+  transferAmount: number; // total bank deposit (sum of row net amounts — the export has no separate total)
   giftCount: number;
   paymentCount: number;
   giftsTotalNet: number;
@@ -86,59 +85,69 @@ function parseCsv(text: string): { header: string[]; rows: string[][] } {
   return { header, rows: rows.filter((r) => r.length === header.length) };
 }
 
+// Excel/Subsplash exports may start with a UTF-8 byte-order mark.
+export const stripBom = (s: string) => (s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
+
 const num = (s: string | undefined) => {
   const n = parseFloat(s ?? "");
   return Number.isFinite(n) ? n : 0;
 };
 
-function parseGiftCsv(text: string): GiftRow[] {
-  const { header, rows } = parseCsv(text);
-  return rows.map((r) => {
-    const o = Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])) as Record<string, string>;
-    return {
-      transactionDate: o["Transaction date"],
-      transactionTimestamp: o["Transaction timestamp"],
-      transferId: o["Transfer ID"],
-      transferDate: o["Transfer date"],
-      status: o["Status"],
-      firstName: o["First name"],
-      lastName: o["Last name"],
-      email: o["Email"],
-      grossAmount: num(o["Gross amount"]),
-      fee: num(o["Fee"]),
-      netAmount: num(o["Net amount"]),
-      donorCoveredFee: o["Donor covered fee"],
-      fund: o["Fund"],
-      paymentMethod: o["Payment method"],
-      memo: o["Memo"],
-      giftId: o["Gift ID"],
-    };
-  });
+// Subsplash's transfer export is a single CSV per transfer (transfer-<id>.csv)
+// with gifts and payments interleaved, told apart by the "Transaction Type"
+// column. Header names are Title Case (e.g. "Gross Amount", "Email Address").
+// Older exports split these into separate gifts-*.csv / payments-*.csv files
+// with different headers — those are no longer supported and are ignored.
+const REQUIRED_HEADERS = ["Transfer ID", "Transaction Type", "Gross Amount", "Net Amount"];
+
+export function isTransferCsv(header: string[]): boolean {
+  return REQUIRED_HEADERS.every((h) => header.includes(h));
 }
 
-function parsePaymentCsv(text: string): PaymentRow[] {
-  const { header, rows } = parseCsv(text);
-  return rows.map((r) => {
+function parseTransferCsv(text: string): { gifts: GiftRow[]; payments: PaymentRow[] } {
+  const { header, rows } = parseCsv(stripBom(text));
+  const gifts: GiftRow[] = [];
+  const payments: PaymentRow[] = [];
+  if (!isTransferCsv(header)) return { gifts, payments };
+
+  for (const r of rows) {
     const o = Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])) as Record<string, string>;
-    return {
-      transactionDate: o["Transaction date"],
-      transactionTimestamp: o["Transaction timestamp"],
+    const base = {
+      transactionDate: o["Transaction Date"],
+      transactionTimestamp: o["Transaction Timestamp"],
       transferId: o["Transfer ID"],
-      transferDate: o["Transfer date"],
+      transferDate: o["Transfer Date"],
       status: o["Status"],
-      firstName: o["First name"],
-      lastName: o["Last name"],
-      email: o["Email"],
-      grossAmount: num(o["Gross amount"]),
+      firstName: o["First Name"],
+      lastName: o["Last Name"],
+      email: o["Email Address"],
+      grossAmount: num(o["Gross Amount"]),
       fee: num(o["Fee"]),
-      netAmount: num(o["Net amount"]),
+      netAmount: num(o["Net Amount"]),
       fund: o["Fund"],
-      paymentSource: o["Payment source"],
-      paymentMethod: o["Payment method"],
-      paymentId: o["Payment ID"],
-      transferAmount: num(o["Transfer amount"]),
+      paymentMethod: o["Payment Method"],
     };
-  });
+    const type = (o["Transaction Type"] ?? "").trim().toLowerCase();
+    // "Gift" and "Payment" are the only types seen so far. For anything else
+    // (e.g. a refund type), route by shape so the row isn't silently dropped:
+    // a row with a Fund is giving, a row with a Source is a payment.
+    const isGift = type === "gift" || (type !== "payment" && !!o["Fund"] && !o["Source"]);
+    if (isGift) {
+      gifts.push({
+        ...base,
+        donorCoveredFee: (o["Covered Fee"] ?? "").toLowerCase(),
+        memo: o["Memo"],
+        giftId: o["Transaction ID"],
+      });
+    } else {
+      payments.push({
+        ...base,
+        paymentSource: o["Source"],
+        paymentId: o["Transaction ID"],
+      });
+    }
+  }
+  return { gifts, payments };
 }
 
 const TRANSFERS_DIR = path.resolve(process.cwd(), "..", "subsplash", "transfers");
@@ -147,7 +156,7 @@ export function getTransfersDir(): string {
   return TRANSFERS_DIR;
 }
 
-// Pull the distinct non-empty "Transfer ID" values out of a gifts-*/payments-*
+// Pull the distinct non-empty "Transfer ID" values out of a transfer export
 // CSV. Used by the upload route to un-delete transfers when their file is
 // reuploaded (a stale DeletedDeposit soft-delete would otherwise keep them hidden).
 export function extractTransferIds(csvText: string): string[] {
@@ -162,8 +171,9 @@ export function extractTransferIds(csvText: string): string[] {
   return [...ids];
 }
 
-// Reads every gifts-*.csv and payments-*.csv in subsplash/transfers/ and
-// groups by transfer ID. Files of either type are optional per transfer.
+// Reads every transfer export CSV in subsplash/transfers/ and groups rows by
+// Transfer ID. Files without the combined-export header (e.g. legacy
+// gifts-*/payments-* exports) are skipped.
 export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] } {
   let entries: string[];
   try {
@@ -172,22 +182,17 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
     throw new Error(`No subsplash/transfers directory at ${TRANSFERS_DIR}`);
   }
 
-  const giftFiles = entries.filter((f) => /^gifts.*\.csv$/i.test(f));
-  const paymentFiles = entries.filter((f) => /^payments.*\.csv$/i.test(f));
-
   const allGifts: GiftRow[] = [];
   const allPayments: PaymentRow[] = [];
   const csvPaths: string[] = [];
 
-  for (const f of giftFiles) {
+  for (const f of entries.filter((f) => /\.csv$/i.test(f))) {
     const p = path.join(TRANSFERS_DIR, f);
+    const { gifts, payments } = parseTransferCsv(readFileSync(p, "utf8"));
+    if (gifts.length === 0 && payments.length === 0) continue;
     csvPaths.push(p);
-    allGifts.push(...parseGiftCsv(readFileSync(p, "utf8")));
-  }
-  for (const f of paymentFiles) {
-    const p = path.join(TRANSFERS_DIR, f);
-    csvPaths.push(p);
-    allPayments.push(...parsePaymentCsv(readFileSync(p, "utf8")));
+    allGifts.push(...gifts);
+    allPayments.push(...payments);
   }
 
   // Dedupe by Gift ID / Payment ID (in case of overlapping uploads)
@@ -236,10 +241,10 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
 
   // Group by transferId
   const byId = new Map<string, Transfer>();
-  const ensure = (id: string, transferDate: string, transferAmount = 0): Transfer => {
+  const ensure = (id: string, transferDate: string): Transfer => {
     if (!byId.has(id)) {
       byId.set(id, {
-        id, transferDate, transferAmount,
+        id, transferDate, transferAmount: 0,
         giftCount: 0, paymentCount: 0,
         giftsTotalNet: 0, giftsTotalFees: 0,
         paymentsTotalNet: 0, paymentsTotalFees: 0,
@@ -260,18 +265,17 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
   }
   for (const p of dedupedPayments) {
     if (!p.transferId) continue;
-    const t = ensure(p.transferId, p.transferDate, p.transferAmount);
+    const t = ensure(p.transferId, p.transferDate);
     t.payments.push(p);
     t.paymentCount += 1;
     t.paymentsTotalNet += p.netAmount;
     t.paymentsTotalFees += p.fee;
-    // Payments csv carries the authoritative transfer amount
-    if (p.transferAmount && !t.transferAmount) t.transferAmount = p.transferAmount;
   }
 
-  // If no payments, transferAmount falls back to giftsTotalNet
   for (const t of byId.values()) {
-    if (!t.transferAmount) t.transferAmount = t.giftsTotalNet + t.paymentsTotalNet;
+    // The combined export has no "Transfer amount" column; the deposit is the
+    // sum of every row's net amount.
+    t.transferAmount = Math.round((t.giftsTotalNet + t.paymentsTotalNet) * 100) / 100;
 
     // Rollups
     const giftMap = new Map<string, GiftRollup>();

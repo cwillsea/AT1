@@ -1,18 +1,27 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
-import { getTransfersDir, extractTransferIds } from "@/lib/subsplash-csv";
+import { getTransfersDir, extractTransferIds, isTransferCsv, stripBom } from "@/lib/subsplash-csv";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// Accept either CSV files (gifts-*.csv, payments-*.csv) or ZIP files containing
-// CSVs. Files are saved into ../subsplash/transfers/ from the steward project root.
+// Accept Subsplash transfer export CSVs (transfer-<id>.csv — gifts and payments
+// combined in one file) or ZIP files containing them. A file is accepted based on
+// its header row, not its name. Files are saved into ../subsplash/transfers/
+// from the steward project root.
 //
 // Upload via:
 //   const fd = new FormData();
 //   for (const file of files) fd.append("files", file);
 //   await fetch("/api/subsplash/upload", { method: "POST", body: fd });
+// Header-only check: first line of the CSV must carry the combined-export columns.
+function looksLikeTransferExport(text: string): boolean {
+  const firstLine = stripBom(text).split(/\r?\n|\r/, 1)[0] ?? "";
+  const header = firstLine.split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+  return isTransferCsv(header);
+}
+
 export async function POST(request: Request) {
   const dir = getTransfersDir();
   mkdirSync(dir, { recursive: true });
@@ -44,12 +53,11 @@ export async function POST(request: Request) {
             skipped.push({ name: entryName, reason: "not a csv inside zip" });
             continue;
           }
-          // Sanity: only accept files that look like Subsplash exports
-          if (!/^(gifts|payments)/i.test(entryName)) {
-            skipped.push({ name: entryName, reason: "filename doesn't start with gifts/payments" });
+          const data = entry.getData();
+          if (!looksLikeTransferExport(data.toString("utf8"))) {
+            skipped.push({ name: entryName, reason: "not a Subsplash transfer export (missing Transaction Type / Transfer ID columns)" });
             continue;
           }
-          const data = entry.getData();
           const target = path.join(dir, entryName);
           writeFileSync(target, data);
           written.push(entryName);
@@ -59,8 +67,8 @@ export async function POST(request: Request) {
         skipped.push({ name, reason: `zip parse failed: ${e instanceof Error ? e.message : String(e)}` });
       }
     } else if (lower.endsWith(".csv")) {
-      if (!/^(gifts|payments)/i.test(name)) {
-        skipped.push({ name, reason: "filename doesn't start with gifts/payments" });
+      if (!looksLikeTransferExport(buffer.toString("utf8"))) {
+        skipped.push({ name, reason: "not a Subsplash transfer export (missing Transaction Type / Transfer ID columns)" });
         continue;
       }
       const target = path.join(dir, name);

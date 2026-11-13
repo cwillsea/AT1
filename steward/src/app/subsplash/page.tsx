@@ -97,7 +97,7 @@ export default async function SubsplashPage() {
 
       {!loadError && transfers.length === 0 && (
         <div className="bg-honey-soft border border-honey/30 rounded-xl px-[18px] py-3.5 font-ui text-[12.5px] text-ink2">
-          No transfers yet. Drop gifts-*.csv / payments-*.csv files (or a zip containing them) into the
+          No transfers yet. Drop Subsplash transfer exports (transfer-*.csv, or a zip containing them) into the
           uploader above. Files are saved to <span className="font-mono">{onlineDirHint}/</span>.
         </div>
       )}
