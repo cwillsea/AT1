@@ -44,7 +44,7 @@ export type PaymentRollup = { paymentSource: string; count: number; gross: numbe
 export type Transfer = {
   id: string;             // transferId
   transferDate: string;   // YYYY-MM-DD
-  transferAmount: number; // total bank deposit (sum of row net amounts — the export has no separate total)
+  transferAmount: number; // total bank deposit (stated in legacy payments files; else sum of row net amounts)
   giftCount: number;
   paymentCount: number;
   giftsTotalNet: number;
@@ -93,25 +93,101 @@ const num = (s: string | undefined) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Subsplash's transfer export is a single CSV per transfer (transfer-<id>.csv)
-// with gifts and payments interleaved, told apart by the "Transaction Type"
-// column. Header names are Title Case (e.g. "Gross Amount", "Email Address").
-// Older exports split these into separate gifts-*.csv / payments-*.csv files
-// with different headers — those are no longer supported and are ignored.
-const REQUIRED_HEADERS = ["Transfer ID", "Transaction Type", "Gross Amount", "Net Amount"];
+// Subsplash has shipped two export formats. Each file's format is detected from
+// its header row (not its filename), and both parse into the same row types:
+//
+//   "combined" — current (Oct 2026+): one transfer-<id>.csv per transfer with
+//                gifts and payments interleaved, told apart by the
+//                "Transaction Type" column. Title Case headers ("Gross Amount",
+//                "Email Address", "Source", "Transaction ID"). No transfer total.
+//   "legacy-gifts" / "legacy-payments" — older: separate gifts-*.csv and
+//                payments-*.csv files with sentence-case headers ("Gross amount",
+//                "Gift ID", "Payment source"). The payments file carries
+//                "Transfer amount", the authoritative bank deposit total.
+//
+// Legacy support stays so transfers posted before the format change still show
+// on the /subsplash shelf.
+export type SubsplashCsvKind = "combined" | "legacy-gifts" | "legacy-payments";
 
-export function isTransferCsv(header: string[]): boolean {
-  return REQUIRED_HEADERS.every((h) => header.includes(h));
+export function detectSubsplashCsvKind(header: string[]): SubsplashCsvKind | null {
+  const has = (...hs: string[]) => hs.every((h) => header.includes(h));
+  if (has("Transfer ID", "Transaction Type", "Gross Amount", "Net Amount")) return "combined";
+  if (has("Transfer ID", "Payment source", "Gross amount", "Net amount")) return "legacy-payments";
+  if (has("Transfer ID", "Gift ID", "Gross amount", "Net amount")) return "legacy-gifts";
+  return null;
 }
 
-function parseTransferCsv(text: string): { gifts: GiftRow[]; payments: PaymentRow[] } {
-  const { header, rows } = parseCsv(stripBom(text));
-  const gifts: GiftRow[] = [];
-  const payments: PaymentRow[] = [];
-  if (!isTransferCsv(header)) return { gifts, payments };
+type ParsedFile = {
+  gifts: GiftRow[];
+  payments: PaymentRow[];
+  // Bank deposit total per transfer, when the file states one (legacy payments only).
+  transferAmounts: Map<string, number>;
+};
 
-  for (const r of rows) {
-    const o = Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])) as Record<string, string>;
+function parseSubsplashCsv(text: string): ParsedFile {
+  const { header, rows } = parseCsv(stripBom(text));
+  const out: ParsedFile = { gifts: [], payments: [], transferAmounts: new Map() };
+  const kind = detectSubsplashCsvKind(header);
+  const records = () =>
+    rows.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])) as Record<string, string>);
+
+  if (kind === "combined") parseCombinedRows(records(), out);
+  else if (kind === "legacy-gifts") parseLegacyGiftRows(records(), out);
+  else if (kind === "legacy-payments") parseLegacyPaymentRows(records(), out);
+  return out;
+}
+
+function parseLegacyGiftRows(records: Record<string, string>[], out: ParsedFile) {
+  for (const o of records) {
+    out.gifts.push({
+      transactionDate: o["Transaction date"],
+      transactionTimestamp: o["Transaction timestamp"],
+      transferId: o["Transfer ID"],
+      transferDate: o["Transfer date"],
+      status: o["Status"],
+      firstName: o["First name"],
+      lastName: o["Last name"],
+      email: o["Email"],
+      grossAmount: num(o["Gross amount"]),
+      fee: num(o["Fee"]),
+      netAmount: num(o["Net amount"]),
+      donorCoveredFee: (o["Donor covered fee"] ?? "").toLowerCase(),
+      fund: o["Fund"],
+      paymentMethod: o["Payment method"],
+      memo: o["Memo"],
+      giftId: o["Gift ID"],
+    });
+  }
+}
+
+function parseLegacyPaymentRows(records: Record<string, string>[], out: ParsedFile) {
+  for (const o of records) {
+    const transferId = o["Transfer ID"];
+    out.payments.push({
+      transactionDate: o["Transaction date"],
+      transactionTimestamp: o["Transaction timestamp"],
+      transferId,
+      transferDate: o["Transfer date"],
+      status: o["Status"],
+      firstName: o["First name"],
+      lastName: o["Last name"],
+      email: o["Email"],
+      grossAmount: num(o["Gross amount"]),
+      fee: num(o["Fee"]),
+      netAmount: num(o["Net amount"]),
+      fund: o["Fund"],
+      paymentSource: o["Payment source"],
+      paymentMethod: o["Payment method"],
+      paymentId: o["Payment ID"],
+    });
+    const amt = num(o["Transfer amount"]);
+    if (transferId && amt && !out.transferAmounts.has(transferId)) out.transferAmounts.set(transferId, amt);
+  }
+}
+
+function parseCombinedRows(records: Record<string, string>[], out: ParsedFile) {
+  const { gifts, payments } = out;
+  for (const o of records) {
     const base = {
       transactionDate: o["Transaction Date"],
       transactionTimestamp: o["Transaction Timestamp"],
@@ -147,7 +223,6 @@ function parseTransferCsv(text: string): { gifts: GiftRow[]; payments: PaymentRo
       });
     }
   }
-  return { gifts, payments };
 }
 
 const TRANSFERS_DIR = path.resolve(process.cwd(), "..", "subsplash", "transfers");
@@ -171,9 +246,8 @@ export function extractTransferIds(csvText: string): string[] {
   return [...ids];
 }
 
-// Reads every transfer export CSV in subsplash/transfers/ and groups rows by
-// Transfer ID. Files without the combined-export header (e.g. legacy
-// gifts-*/payments-* exports) are skipped.
+// Reads every Subsplash export CSV in subsplash/transfers/ (combined or legacy
+// format) and groups rows by Transfer ID. Unrecognized CSVs are skipped.
 export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] } {
   let entries: string[];
   try {
@@ -185,14 +259,16 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
   const allGifts: GiftRow[] = [];
   const allPayments: PaymentRow[] = [];
   const csvPaths: string[] = [];
+  const statedTransferAmounts = new Map<string, number>();
 
   for (const f of entries.filter((f) => /\.csv$/i.test(f))) {
     const p = path.join(TRANSFERS_DIR, f);
-    const { gifts, payments } = parseTransferCsv(readFileSync(p, "utf8"));
+    const { gifts, payments, transferAmounts } = parseSubsplashCsv(readFileSync(p, "utf8"));
     if (gifts.length === 0 && payments.length === 0) continue;
     csvPaths.push(p);
     allGifts.push(...gifts);
     allPayments.push(...payments);
+    for (const [id, amt] of transferAmounts) if (!statedTransferAmounts.has(id)) statedTransferAmounts.set(id, amt);
   }
 
   // Dedupe by Gift ID / Payment ID (in case of overlapping uploads)
@@ -273,9 +349,11 @@ export function loadAllTransfers(): { csvPaths: string[]; transfers: Transfer[] 
   }
 
   for (const t of byId.values()) {
-    // The combined export has no "Transfer amount" column; the deposit is the
-    // sum of every row's net amount.
-    t.transferAmount = Math.round((t.giftsTotalNet + t.paymentsTotalNet) * 100) / 100;
+    // Legacy payments files state the bank deposit total; use it when present so
+    // the card's "split matches deposit" check is meaningful. The combined
+    // export has no such column, so fall back to the sum of row net amounts.
+    t.transferAmount =
+      statedTransferAmounts.get(t.id) ?? Math.round((t.giftsTotalNet + t.paymentsTotalNet) * 100) / 100;
 
     // Rollups
     const giftMap = new Map<string, GiftRollup>();
